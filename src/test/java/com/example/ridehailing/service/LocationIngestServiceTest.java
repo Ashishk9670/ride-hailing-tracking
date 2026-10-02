@@ -15,7 +15,9 @@ class LocationIngestServiceTest {
     DriverTripRegistry registry = mock(DriverTripRegistry.class);
     LocationHistoryRepository history = mock(LocationHistoryRepository.class);
     TripEventBroadcaster broadcaster = mock(TripEventBroadcaster.class);
-    LocationIngestService svc = new LocationIngestService(geo, registry, history, broadcaster);
+    io.micrometer.core.instrument.simple.SimpleMeterRegistry meters = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+    com.example.ridehailing.metrics.AppMetrics metrics = new com.example.ridehailing.metrics.AppMetrics(meters);
+    LocationIngestService svc = new LocationIngestService(geo, registry, history, broadcaster, metrics);
     LocationUpdate u = new LocationUpdate("d1", null, 10, 20, 90, 30, 1000L);
 
     @Test
@@ -35,5 +37,21 @@ class LocationIngestServiceTest {
         verify(broadcaster).publishLocation(c.getValue());
         verify(geo, never()).upsert(any(), anyDouble(), anyDouble());
         org.assertj.core.api.Assertions.assertThat(c.getValue().tripId()).isEqualTo("trip-1");
+    }
+
+    @Test
+    void invalidCoordinatesAreRejectedForDeadLettering() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> svc.process(new LocationUpdate("d1", null, 999, 20, 0, 0, 1L)))
+                .isInstanceOf(InvalidLocationException.class);
+        verifyNoInteractions(geo, history, broadcaster);
+    }
+
+    @Test
+    void processedUpdatesAreCounted() {
+        when(registry.activeTrip("d1")).thenReturn(Optional.empty());
+        svc.process(u);
+        org.assertj.core.api.Assertions.assertThat(
+                meters.get("driver.location.updates").tag("stage", "processed").counter().count()).isEqualTo(1.0);
     }
 }

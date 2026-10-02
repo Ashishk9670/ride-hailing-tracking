@@ -1,6 +1,7 @@
 package com.example.ridehailing.service;
 
 import com.example.ridehailing.dto.LocationUpdate;
+import com.example.ridehailing.metrics.AppMetrics;
 import com.example.ridehailing.redis.DriverGeoIndex;
 import com.example.ridehailing.redis.DriverTripRegistry;
 import java.util.Optional;
@@ -14,8 +15,12 @@ public class LocationIngestService {
     private final LocationHistoryRepository history;
     private final TripEventBroadcaster broadcaster;
 
+    private final AppMetrics metrics;
+
     public LocationIngestService(DriverGeoIndex geoIndex, DriverTripRegistry registry,
-                                 LocationHistoryRepository history, TripEventBroadcaster broadcaster) {
+                                 LocationHistoryRepository history, TripEventBroadcaster broadcaster,
+                                 AppMetrics metrics) {
+        this.metrics = metrics;
         this.geoIndex = geoIndex;
         this.registry = registry;
         this.history = history;
@@ -23,6 +28,11 @@ public class LocationIngestService {
     }
 
     public void process(LocationUpdate update) {
+        if (update.driverId() == null || update.driverId().isBlank()
+                || !(Math.abs(update.lat()) <= 90) || !(Math.abs(update.lon()) <= 180)) {
+            throw new InvalidLocationException("Invalid location update: " + update);
+        }
+        metrics.locationProcessed();
         Optional<String> tripId = registry.activeTrip(update.driverId());
         if (tripId.isEmpty()) {
             geoIndex.upsert(update.driverId(), update.lat(), update.lon());

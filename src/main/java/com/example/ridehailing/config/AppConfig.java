@@ -9,9 +9,11 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
 @EnableConfigurationProperties(AppProperties.class)
+@EnableScheduling
 public class AppConfig {
 
     @Bean

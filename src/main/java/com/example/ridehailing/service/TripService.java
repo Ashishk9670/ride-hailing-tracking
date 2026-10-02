@@ -7,7 +7,9 @@ import com.example.ridehailing.domain.TripStatus;
 import com.example.ridehailing.dto.NearbyDriver;
 import com.example.ridehailing.dto.RideRequest;
 import com.example.ridehailing.dto.TripEvent;
+import com.example.ridehailing.metrics.AppMetrics;
 import com.example.ridehailing.redis.DriverGeoIndex;
+import io.micrometer.core.instrument.Timer;
 import com.example.ridehailing.redis.DriverTripRegistry;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -22,9 +24,11 @@ public class TripService {
     private final DriverTripRegistry registry;
     private final DispatchEventPublisher events;
     private final AppProperties props;
+    private final AppMetrics metrics;
 
     public TripService(TripRepository trips, DriverGeoIndex geoIndex, DriverTripRegistry registry,
-                       DispatchEventPublisher events, AppProperties props) {
+                       DispatchEventPublisher events, AppProperties props, AppMetrics metrics) {
+        this.metrics = metrics;
         this.trips = trips;
         this.geoIndex = geoIndex;
         this.registry = registry;
@@ -36,6 +40,7 @@ public class TripService {
     public Trip requestRide(RideRequest req) {
         Trip trip = trips.save(new Trip(req.riderId(), req.pickupLat(), req.pickupLon(), req.dropoffLat(), req.dropoffLon()));
         emit("TRIP_REQUESTED", trip);
+        Timer.Sample sample = metrics.startMatch();
         List<NearbyDriver> candidates = geoIndex.findNearest(req.pickupLat(), req.pickupLon(),
                 props.matching().radiusKm(), props.matching().maxCandidates());
         for (NearbyDriver c : candidates) {
@@ -43,10 +48,12 @@ public class TripService {
                 trip.assignDriver(c.driverId());
                 registry.assign(c.driverId(), trip.getId().toString());
                 trips.save(trip);
+                metrics.recordMatch(sample, true);
                 emit("DRIVER_ASSIGNED", trip);
                 return trip;
             }
         }
+        metrics.recordMatch(sample, false);
         trip.transitionTo(TripStatus.NO_DRIVER_AVAILABLE);
         trips.save(trip);
         emit("NO_DRIVER_AVAILABLE", trip);

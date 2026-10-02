@@ -14,7 +14,9 @@ import com.example.ridehailing.domain.TripStatus;
 import com.example.ridehailing.dto.NearbyDriver;
 import com.example.ridehailing.dto.RideRequest;
 import com.example.ridehailing.dto.TripEvent;
+import com.example.ridehailing.metrics.AppMetrics;
 import com.example.ridehailing.redis.DriverGeoIndex;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.example.ridehailing.redis.DriverTripRegistry;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -29,15 +31,18 @@ class TripServiceTest {
     DriverGeoIndex geo = mock(DriverGeoIndex.class);
     DriverTripRegistry registry = mock(DriverTripRegistry.class);
     DispatchEventPublisher events = mock(DispatchEventPublisher.class);
+    SimpleMeterRegistry meters = new SimpleMeterRegistry();
+    AppMetrics metrics = new AppMetrics(meters);
     TripService service;
     final RideRequest req = new RideRequest("rider", 37.77, -122.41, 37.80, -122.40);
 
     @BeforeEach
     void setUp() {
         AppProperties props = new AppProperties(new AppProperties.Topics("t", 1),
-                new AppProperties.Redis("geo", "chan"), new AppProperties.Matching(5, 3));
+                new AppProperties.Redis("geo", "chan", "seen", 30, 5000), new AppProperties.Matching(5, 3),
+                new AppProperties.Retry(3, 10, 2.0, 100));
         when(trips.save(any(Trip.class))).thenAnswer(i -> i.getArgument(0));
-        service = new TripService(trips, geo, registry, events, props);
+        service = new TripService(trips, geo, registry, events, props, metrics);
     }
 
     @Test
@@ -52,6 +57,8 @@ class TripServiceTest {
         assertThat(t.getStatus()).isEqualTo(TripStatus.DRIVER_ASSIGNED);
         assertThat(t.getDriverId()).isEqualTo("d2");
         verify(registry).assign("d2", t.getId().toString());
+        assertThat(meters.get("rides.matches").tag("result", "matched").counter().count()).isEqualTo(1.0);
+        assertThat(meters.get("rides.match.latency").tag("result", "matched").timer().count()).isEqualTo(1L);
         ArgumentCaptor<TripEvent> ev = ArgumentCaptor.forClass(TripEvent.class);
         verify(events, times(2)).publish(ev.capture());
         assertThat(ev.getAllValues()).extracting(TripEvent::type).containsExactly("TRIP_REQUESTED", "DRIVER_ASSIGNED");
@@ -63,6 +70,7 @@ class TripServiceTest {
         Trip t = service.requestRide(req);
         assertThat(t.getStatus()).isEqualTo(TripStatus.NO_DRIVER_AVAILABLE);
         verify(registry, never()).assign(any(), any());
+        assertThat(meters.get("rides.matches").tag("result", "no_driver").counter().count()).isEqualTo(1.0);
     }
 
     @Test
