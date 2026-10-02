@@ -27,6 +27,15 @@ public class AppMetrics {
         // drivers_expired_total
         this.expired = Counter.builder("drivers.expired")
                 .description("Stale drivers evicted from the Redis geo index").register(registry);
+        for (String result : new String[]{"matched", "no_driver"}) { // visible at 0 before the first ride
+            registry.counter("rides.matches", "result", result);
+            matchTimer(result);
+        }
+    }
+
+    private Timer matchTimer(String result) {
+        return Timer.builder("rides.match.latency").description("Time to find and claim a driver")
+                .tag("result", result).publishPercentileHistogram().register(registry);
     }
 
     public void locationReceived() { received.increment(); }
@@ -43,7 +52,6 @@ public class AppMetrics {
     public void recordMatch(Timer.Sample sample, boolean matched) {
         String result = matched ? "matched" : "no_driver";
         registry.counter("rides.matches", "result", result).increment();
-        sample.stop(Timer.builder("rides.match.latency").description("Time to find and claim a driver")
-                .tag("result", result).publishPercentileHistogram().register(registry));
+        sample.stop(matchTimer(result));
     }
 }

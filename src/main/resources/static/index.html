@@ -17,6 +17,15 @@
 <body>
 <div id="panel">
   <h3>Live Trip Tracking</h3>
+  <fieldset id="auth" style="margin:0 0 8px">
+    <legend>Sign in</legend>
+    <select id="login-role" style="width:100%">
+      <option value="operator">operator (RIDER + ADMIN)</option>
+      <option value="rider">rider (RIDER)</option>
+    </select>
+    <button id="btn-login">Sign in</button>
+    <div id="auth-state">signed out</div>
+  </fieldset>
   <button id="btn-sim">Start simulator (10 drivers)</button>
   <button id="btn-request">Request ride (pickup = map center)</button>
   <label>Trip ID <input id="trip-id" style="width:100%" placeholder="trip id"></label>
@@ -39,12 +48,15 @@
 const CENTER = [37.7749, -122.4194];
 const map = L.map('map').setView(CENTER, 14);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '&copy; OpenStreetMap'}).addTo(map);
-let marker = null, ws = null, count = 0, pickupMarker = null;
+let marker = null, ws = null, count = 0, pickupMarker = null, token = null;
+const USER = 'ui-rider';
 const $ = id => document.getElementById(id);
 const log = m => { const d = document.createElement('div'); d.textContent = m; $('log').prepend(d); };
 
 async function api(method, path, body) {
-  const r = await fetch(path, {method, headers: {'Content-Type': 'application/json'}, body: body ? JSON.stringify(body) : undefined});
+  const headers = {'Content-Type': 'application/json'};
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const r = await fetch(path, {method, headers, body: body ? JSON.stringify(body) : undefined});
   if (!r.ok) { log(method + ' ' + path + ' -> ' + r.status); return null; }
   const t = await r.text(); return t ? JSON.parse(t) : {};
 }
@@ -54,7 +66,7 @@ function setStatus(t) { $('trip-status').textContent = t.status; if (t.driverId)
 function track(id) {
   if (ws) ws.close();
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(proto + '://' + location.host + '/ws/trips/' + id);
+  ws = new WebSocket(proto + '://' + location.host + '/ws/trips/' + id + '?access_token=' + encodeURIComponent(token || ''));
   ws.onopen = () => { $('conn').textContent = 'connected'; };
   ws.onclose = () => { $('conn').textContent = 'closed'; };
   ws.onmessage = ev => {
@@ -73,10 +85,17 @@ function track(id) {
   };
 }
 
+$('btn-login').onclick = async () => {
+  const roles = $('login-role').value === 'operator' ? ['RIDER', 'ADMIN'] : ['RIDER'];
+  const r = await api('POST', '/api/auth/token', {subject: USER, roles});
+  if (!r) { $('auth-state').textContent = 'sign-in failed'; return; }
+  token = r.accessToken;
+  $('auth-state').textContent = 'signed in as ' + USER + ' [' + roles.join(',') + ']';
+};
 $('btn-sim').onclick = async () => { const r = await api('POST', '/api/simulator/start?count=10&lat=' + CENTER[0] + '&lon=' + CENTER[1] + '&intervalMs=500'); log('simulator ' + JSON.stringify(r)); };
 $('btn-request').onclick = async () => {
   const c = map.getCenter();
-  const t = await api('POST', '/api/rides', {riderId: 'ui-rider', pickupLat: c.lat, pickupLon: c.lng, dropoffLat: c.lat + 0.01, dropoffLon: c.lng + 0.01});
+  const t = await api('POST', '/api/rides', {riderId: USER, pickupLat: c.lat, pickupLon: c.lng, dropoffLat: c.lat + 0.01, dropoffLon: c.lng + 0.01});
   if (!t) return;
   $('trip-id').value = t.id; setStatus(t);
   if (pickupMarker) pickupMarker.remove();

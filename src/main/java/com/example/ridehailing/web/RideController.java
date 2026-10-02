@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -30,6 +31,7 @@ public class RideController {
 
     @PostMapping("/rides")
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("#req.riderId() == authentication.name")
     public TripView requestRide(@Valid @RequestBody RideRequest req) {
         return TripView.of(tripService.requestRide(req));
     }
@@ -50,6 +52,7 @@ public class RideController {
     /** Driver app endpoint: pushes into the Kafka firehose. */
     @PostMapping("/drivers/{driverId}/location")
     @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("#driverId == authentication.name")
     public void driverLocation(@PathVariable String driverId, @Valid @RequestBody DriverLocationRequest req) {
         producer.send(new LocationUpdate(driverId, null, req.lat(), req.lon(), req.heading(), req.speedKmh(),
                 System.currentTimeMillis()));

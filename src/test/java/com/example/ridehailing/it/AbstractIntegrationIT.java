@@ -1,6 +1,11 @@
 package com.example.ridehailing.it;
 
+import com.example.ridehailing.security.JwtTokenService;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -20,6 +25,31 @@ abstract class AbstractIntegrationIT {
 
     @LocalServerPort
     int port;
+
+    @Autowired JwtTokenService tokens;
+    @Autowired TestRestTemplate rest;
+
+    /** Bearer token attached to every TestRestTemplate call; switch identity with {@link #as}. */
+    static volatile String bearer;
+    private static boolean interceptorInstalled;
+
+    @BeforeEach
+    void installAuthInterceptor() {
+        synchronized (AbstractIntegrationIT.class) {
+            if (!interceptorInstalled) {
+                rest.getRestTemplate().getInterceptors().add((req, body, exec) -> {
+                    if (bearer != null && !req.getHeaders().containsKey("Authorization")) req.getHeaders().setBearerAuth(bearer);
+                    return exec.execute(req, body);
+                });
+                interceptorInstalled = true;
+            }
+        }
+        bearer = null;
+    }
+
+    String token(String subject, String... roles) { return tokens.issue(subject, List.of(roles)); }
+
+    void as(String subject, String... roles) { bearer = token(subject, roles); }
 
     static synchronized void startAll() {
         if (postgres != null) return;

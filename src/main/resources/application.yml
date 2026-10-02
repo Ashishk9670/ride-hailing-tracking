@@ -49,6 +49,12 @@ server:
   port: 8080
 
 ridehailing:
+  auth:
+    # HS256 key shared with the token issuer. Override in every real deployment (RIDEHAILING_JWT_SECRET).
+    jwt-secret: ${RIDEHAILING_JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
+    token-ttl-seconds: 3600
+    # demo only: POST /api/auth/token mints tokens for any subject/roles; disable outside dev/test
+    dev-token-endpoint-enabled: ${DEV_TOKEN_ENDPOINT_ENABLED:true}
   topics:
     driver-locations: driver-locations
     partitions: 3
@@ -66,3 +72,28 @@ ridehailing:
     initial-interval-ms: 200
     multiplier: 2.0
     max-interval-ms: 2000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    # 0 = tracing wired but nothing sampled/exported; set TRACING_SAMPLING_PROBABILITY=1.0 with a collector
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:0.0}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+
+logging:
+  pattern:
+    correlation: "[${spring.application.name:},%X{traceId:-},%X{spanId:-}] "
+  include-application-name: false
