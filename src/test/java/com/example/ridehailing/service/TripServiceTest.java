@@ -1,0 +1,96 @@
+package com.example.ridehailing.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.*;
+
+import com.example.ridehailing.config.AppProperties;
+import com.example.ridehailing.domain.Trip;
+import com.example.ridehailing.domain.TripRepository;
+import com.example.ridehailing.domain.TripStatus;
+import com.example.ridehailing.dto.NearbyDriver;
+import com.example.ridehailing.dto.RideRequest;
+import com.example.ridehailing.dto.TripEvent;
+import com.example.ridehailing.redis.DriverGeoIndex;
+import com.example.ridehailing.redis.DriverTripRegistry;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+class TripServiceTest {
+    TripRepository trips = mock(TripRepository.class);
+    DriverGeoIndex geo = mock(DriverGeoIndex.class);
+    DriverTripRegistry registry = mock(DriverTripRegistry.class);
+    DispatchEventPublisher events = mock(DispatchEventPublisher.class);
+    TripService service;
+    final RideRequest req = new RideRequest("rider", 37.77, -122.41, 37.80, -122.40);
+
+    @BeforeEach
+    void setUp() {
+        AppProperties props = new AppProperties(new AppProperties.Topics("t", 1),
+                new AppProperties.Redis("geo", "chan"), new AppProperties.Matching(5, 3));
+        when(trips.save(any(Trip.class))).thenAnswer(i -> i.getArgument(0));
+        service = new TripService(trips, geo, registry, events, props);
+    }
+
+    @Test
+    void assignsNearestClaimableDriver() {
+        when(geo.findNearest(anyDouble(), anyDouble(), anyDouble(), anyInt())).thenReturn(List.of(
+                new NearbyDriver("d1", 100, 0, 0), new NearbyDriver("d2", 200, 0, 0)));
+        when(geo.claim("d1")).thenReturn(false); // lost the race
+        when(geo.claim("d2")).thenReturn(true);
+
+        Trip t = service.requestRide(req);
+
+        assertThat(t.getStatus()).isEqualTo(TripStatus.DRIVER_ASSIGNED);
+        assertThat(t.getDriverId()).isEqualTo("d2");
+        verify(registry).assign("d2", t.getId().toString());
+        ArgumentCaptor<TripEvent> ev = ArgumentCaptor.forClass(TripEvent.class);
+        verify(events, times(2)).publish(ev.capture());
+        assertThat(ev.getAllValues()).extracting(TripEvent::type).containsExactly("TRIP_REQUESTED", "DRIVER_ASSIGNED");
+    }
+
+    @Test
+    void noDriversMarksTrip() {
+        when(geo.findNearest(anyDouble(), anyDouble(), anyDouble(), anyInt())).thenReturn(List.of());
+        Trip t = service.requestRide(req);
+        assertThat(t.getStatus()).isEqualTo(TripStatus.NO_DRIVER_AVAILABLE);
+        verify(registry, never()).assign(any(), any());
+    }
+
+    @Test
+    void completingReleasesDriver() {
+        Trip t = new Trip("r", 1, 1, 2, 2);
+        t.assignDriver("d1");
+        t.transitionTo(TripStatus.DRIVER_ARRIVED);
+        t.transitionTo(TripStatus.IN_PROGRESS);
+        when(trips.findById(t.getId())).thenReturn(Optional.of(t));
+
+        service.updateStatus(t.getId(), TripStatus.COMPLETED);
+
+        verify(registry).release("d1");
+        assertThat(t.getStatus()).isEqualTo(TripStatus.COMPLETED);
+    }
+
+    @Test
+    void illegalTransitionThrows() {
+        Trip t = new Trip("r", 1, 1, 2, 2);
+        when(trips.findById(t.getId())).thenReturn(Optional.of(t));
+        assertThatThrownBy(() -> service.updateStatus(t.getId(), TripStatus.COMPLETED))
+                .isInstanceOf(IllegalStateException.class);
+        verify(registry, never()).release(any());
+    }
+
+    @Test
+    void missingTripThrows() {
+        when(trips.findById(any())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.get(UUID.randomUUID())).isInstanceOf(NoSuchElementException.class);
+    }
+}

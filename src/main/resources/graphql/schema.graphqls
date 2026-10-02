@@ -1,0 +1,36 @@
+type Query {
+    trip(id: ID!): Trip
+    nearbyDrivers(lat: Float!, lon: Float!, radiusKm: Float = 5): [NearbyDriver!]!
+}
+
+type Subscription {
+    tripLocation(tripId: ID!): LocationUpdate!
+    tripStatus(tripId: ID!): TripEvent!
+}
+
+enum TripStatus { REQUESTED DRIVER_ASSIGNED DRIVER_ARRIVED IN_PROGRESS COMPLETED CANCELLED NO_DRIVER_AVAILABLE }
+
+type Trip {
+    id: ID!
+    riderId: String!
+    driverId: String
+    status: TripStatus!
+    pickupLat: Float!
+    pickupLon: Float!
+    dropoffLat: Float!
+    dropoffLon: Float!
+}
+
+type NearbyDriver { driverId: String! distanceMeters: Float! lat: Float! lon: Float! }
+
+type LocationUpdate {
+    driverId: String!
+    tripId: String
+    lat: Float!
+    lon: Float!
+    heading: Float!
+    speedKmh: Float!
+    timestamp: String!
+}
+
+type TripEvent { type: String! tripId: String! driverId: String status: TripStatus timestamp: String! }

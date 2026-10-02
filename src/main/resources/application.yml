@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: ride-hailing-tracking
+  datasource:
+    url: jdbc:postgresql://localhost:5432/rides
+    username: rides
+    password: rides
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+        linger.ms: 5
+    consumer:
+      group-id: location-ingest
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.value.default.type: com.example.ridehailing.dto.LocationUpdate
+        spring.json.use.type.headers: false
+        spring.json.trusted.packages: com.example.ridehailing.dto
+    listener:
+      concurrency: 3
+  graphql:
+    graphiql:
+      enabled: true
+    websocket:
+      path: /graphql
+
+server:
+  port: 8080
+
+ridehailing:
+  topics:
+    driver-locations: driver-locations
+    partitions: 3
+  redis:
+    geo-key: drivers:available
+    dispatch-channel: dispatch-events
+  matching:
+    radius-km: 5
+    max-candidates: 5

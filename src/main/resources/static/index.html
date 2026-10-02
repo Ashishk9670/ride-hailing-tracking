@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Live Trip Tracking</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; display: flex; height: 100vh; }
+  #panel { width: 300px; padding: 12px; box-sizing: border-box; overflow-y: auto; border-right: 1px solid #ccc; }
+  #map { flex: 1; }
+  button { margin: 2px 0; width: 100%; padding: 6px; }
+  #log { font: 11px monospace; max-height: 200px; overflow-y: auto; background: #f6f6f6; padding: 4px; }
+  dt { font-weight: bold; } dd { margin: 0 0 6px; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h3>Live Trip Tracking</h3>
+  <button id="btn-sim">Start simulator (10 drivers)</button>
+  <button id="btn-request">Request ride (pickup = map center)</button>
+  <label>Trip ID <input id="trip-id" style="width:100%" placeholder="trip id"></label>
+  <button id="btn-track">Track trip</button>
+  <button id="btn-arrived">Driver arrived</button>
+  <button id="btn-start">Start trip</button>
+  <button id="btn-complete">Complete trip</button>
+  <dl>
+    <dt>Connection</dt><dd id="conn">idle</dd>
+    <dt>Trip status</dt><dd id="trip-status">-</dd>
+    <dt>Driver</dt><dd id="driver-id">-</dd>
+    <dt>Position</dt><dd id="position">-</dd>
+    <dt>Updates received</dt><dd id="update-count">0</dd>
+  </dl>
+  <div id="log"></div>
+</div>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const CENTER = [37.7749, -122.4194];
+const map = L.map('map').setView(CENTER, 14);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '&copy; OpenStreetMap'}).addTo(map);
+let marker = null, ws = null, count = 0, pickupMarker = null;
+const $ = id => document.getElementById(id);
+const log = m => { const d = document.createElement('div'); d.textContent = m; $('log').prepend(d); };
+
+async function api(method, path, body) {
+  const r = await fetch(path, {method, headers: {'Content-Type': 'application/json'}, body: body ? JSON.stringify(body) : undefined});
+  if (!r.ok) { log(method + ' ' + path + ' -> ' + r.status); return null; }
+  const t = await r.text(); return t ? JSON.parse(t) : {};
+}
+
+function setStatus(t) { $('trip-status').textContent = t.status; if (t.driverId) $('driver-id').textContent = t.driverId; }
+
+function track(id) {
+  if (ws) ws.close();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto + '://' + location.host + '/ws/trips/' + id);
+  ws.onopen = () => { $('conn').textContent = 'connected'; };
+  ws.onclose = () => { $('conn').textContent = 'closed'; };
+  ws.onmessage = ev => {
+    const f = JSON.parse(ev.data);
+    if (f.kind === 'location') {
+      const p = f.data; const ll = [p.lat, p.lon];
+      if (!marker) marker = L.marker(ll).addTo(map); else marker.setLatLng(ll);
+      map.panTo(ll);
+      $('position').textContent = p.lat.toFixed(5) + ', ' + p.lon.toFixed(5);
+      $('driver-id').textContent = p.driverId;
+      $('update-count').textContent = ++count;
+    } else if (f.kind === 'event') {
+      if (f.data.status) $('trip-status').textContent = f.data.status;
+      log('event ' + f.data.type);
+    }
+  };
+}
+
+$('btn-sim').onclick = async () => { const r = await api('POST', '/api/simulator/start?count=10&lat=' + CENTER[0] + '&lon=' + CENTER[1] + '&intervalMs=500'); log('simulator ' + JSON.stringify(r)); };
+$('btn-request').onclick = async () => {
+  const c = map.getCenter();
+  const t = await api('POST', '/api/rides', {riderId: 'ui-rider', pickupLat: c.lat, pickupLon: c.lng, dropoffLat: c.lat + 0.01, dropoffLon: c.lng + 0.01});
+  if (!t) return;
+  $('trip-id').value = t.id; setStatus(t);
+  if (pickupMarker) pickupMarker.remove();
+  pickupMarker = L.circleMarker([c.lat, c.lng], {radius: 8, color: 'green'}).addTo(map);
+  track(t.id);
+};
+$('btn-track').onclick = () => track($('trip-id').value.trim());
+const setTo = s => async () => { const t = await api('PATCH', '/api/trips/' + $('trip-id').value.trim() + '/status', {status: s}); if (t) setStatus(t); };
+$('btn-arrived').onclick = setTo('DRIVER_ARRIVED');
+$('btn-start').onclick = setTo('IN_PROGRESS');
+$('btn-complete').onclick = setTo('COMPLETED');
+</script>
+</body>
+</html>
