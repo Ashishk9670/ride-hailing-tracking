@@ -1,0 +1,6 @@
+target
+.git
+e2e
+loadtest
+deploy
+*.md

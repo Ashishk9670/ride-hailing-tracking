@@ -71,3 +71,19 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose (all profiles)
+        run: docker compose --profile app --profile monitoring config -q
+      - name: Build image
+        run: docker build -t ride-hailing-tracking:ci .
+      - name: Smoke test image (full stack via compose app profile)
+        run: |
+          docker compose --profile app up -d --build --wait postgres redis kafka app || true
+          for i in $(seq 1 60); do curl -sf localhost:8080/actuator/health && ok=1 && break; sleep 3; done
+          docker compose logs app | tail -30
+          docker compose down -v
+          test "$ok" = 1

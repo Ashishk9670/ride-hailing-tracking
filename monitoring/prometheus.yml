@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: ride-hailing-tracking
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # app running on the host (mvn spring-boot:run); use app:8080 when using the `app` compose profile
+      - targets: ["host.docker.internal:8080", "app:8080"]
