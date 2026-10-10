@@ -12,7 +12,6 @@ data:
   SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/rides
   SPRING_DATA_REDIS_HOST: redis
   SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-  DEV_TOKEN_ENDPOINT_ENABLED: "false"
 ---
 # Placeholder values: replace via your secret manager (sealed-secrets / external-secrets) for real deployments.
 apiVersion: v1
@@ -47,6 +46,8 @@ spec:
       securityContext:
         runAsNonRoot: true
         seccompProfile: { type: RuntimeDefault }
+      volumes:
+        - { name: tmp, emptyDir: {} }
       containers:
         - name: app
           image: ghcr.io/ashishk9670/ride-hailing-tracking:latest
@@ -55,12 +56,17 @@ spec:
           envFrom:
             - configMapRef: { name: ride-hailing-config }
             - secretRef: { name: ride-hailing-secrets }
+          env:
+            - { name: DEV_TOKEN_ENDPOINT_ENABLED, value: "false" }
           resources:
             requests: { cpu: 250m, memory: 512Mi }
             limits: { cpu: "1", memory: 1Gi }
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           startupProbe:
             httpGet: { path: /actuator/health/liveness, port: http }
             failureThreshold: 30
