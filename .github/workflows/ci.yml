@@ -87,3 +87,13 @@ jobs:
           docker compose logs app | tail -30
           docker compose down -v
           test "$ok" = 1
+
+  k8s-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+      - name: Validate manifests against Kubernetes schemas
+        run: ./kubeconform -strict -summary -kubernetes-version 1.30.0 deploy/k8s

@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ride-hailing
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ride-hailing-config
+  namespace: ride-hailing
+data:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/rides
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  DEV_TOKEN_ENDPOINT_ENABLED: "false"
+---
+# Placeholder values: replace via your secret manager (sealed-secrets / external-secrets) for real deployments.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ride-hailing-secrets
+  namespace: ride-hailing
+type: Opaque
+stringData:
+  SPRING_DATASOURCE_USERNAME: rides
+  SPRING_DATASOURCE_PASSWORD: change-me
+  RIDEHAILING_JWT_SECRET: change-me-to-a-long-random-string-0123456789
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ride-hailing-tracking
+  namespace: ride-hailing
+  labels: { app: ride-hailing-tracking }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: ride-hailing-tracking }
+  template:
+    metadata:
+      labels: { app: ride-hailing-tracking }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: ghcr.io/ashishk9670/ride-hailing-tracking:latest
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: ride-hailing-config }
+            - secretRef: { name: ride-hailing-secrets }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ride-hailing-tracking
+  namespace: ride-hailing
+spec:
+  selector: { app: ride-hailing-tracking }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ride-hailing-tracking
+  namespace: ride-hailing
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: ride-hailing-tracking }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ride-hailing-tracking
+  namespace: ride-hailing
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: ride-hailing-tracking }
