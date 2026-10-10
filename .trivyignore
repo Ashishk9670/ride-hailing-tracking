@@ -1,2 +1,4 @@
 # spring-webmvc XsltView RCE: fix only in Spring Framework 7.x; this app has no XSLT views. Revisit on Boot 4 upgrade.
 CVE-2026-47884
+# spring-webmvc SSE stream corruption with views: fix only in Spring Framework 7.x; app does not use SSE/view rendering.
+CVE-2026-47890
