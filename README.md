@@ -1,8 +1,36 @@
 # Ride-Hailing / Delivery Tracking
 
+[![CI](https://github.com/Ashishk9670/ride-hailing-tracking/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashishk9670/ride-hailing-tracking/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Ashishk9670/ride-hailing-tracking/actions/workflows/codeql.yml/badge.svg)](https://github.com/Ashishk9670/ride-hailing-tracking/actions/workflows/codeql.yml)
+[![Trivy](https://github.com/Ashishk9670/ride-hailing-tracking/actions/workflows/trivy.yml/badge.svg)](https://github.com/Ashishk9670/ride-hailing-tracking/actions/workflows/trivy.yml)
+![Java 21](https://img.shields.io/badge/Java-21-orange) ![Spring Boot 3.4](https://img.shields.io/badge/Spring%20Boot-3.4-green)
+
 Spring Boot 3.4 (Java 21, Maven) reference implementation of real-time driver matching and live trip tracking.
 
 ## Architecture
+
+```mermaid
+flowchart LR
+  D[Driver app / simulator] -->|POST /api/drivers/id/location| API[Spring Boot API]
+  R[Rider UI] -->|POST /api/rides| API
+  API -->|produce, key=driverId| K[(Kafka driver-locations)]
+  K -->|consume| ING[LocationIngestService]
+  K -.->|poison pills / retries exhausted| DLT[(Dead-letter topic)]
+  ING -->|available driver: GEOADD| RD[(Redis geo index)]
+  ING -->|active trip: INSERT| PG[(PostgreSQL + PostGIS)]
+  ING -->|active trip| BC[TripEventBroadcaster]
+  API -->|save trip| PG
+  API -->|GEOSEARCH + ZREM claim| RD
+  API -->|publish dispatch-events| PS{{Redis pub/sub}}
+  PS --> BC
+  BC --> WS[WebSocket /ws/trips]
+  BC --> GQL[GraphQL subscriptions]
+  WS --> UI[Leaflet map UI]
+  GQL --> UI
+  API -->|/actuator/prometheus| P[Prometheus] --> G[Grafana]
+```
+
+Text sketch of the same flow:
 
 ```
  driver app / simulator
@@ -31,7 +59,7 @@ Spring Boot 3.4 (Java 21, Maven) reference implementation of real-time driver ma
 - **Kafka**: `driver-locations` topic, JSON values, keyed by driver for per-driver ordering.
 - **PostgreSQL + PostGIS**: Flyway `V1__init.sql`. `trips` (JPA) has generated `geography` columns for pickup/dropoff; `location_history` stores `geography(Point,4326)` with GiST indexes, written and queried with native SQL (`ST_MakePoint`, `ST_MakeLine`, `ST_Length`).
 - **Trip state machine**: `REQUESTED -> DRIVER_ASSIGNED -> DRIVER_ARRIVED -> IN_PROGRESS -> COMPLETED` (also `CANCELLED`, `NO_DRIVER_AVAILABLE`); illegal transitions return HTTP 409. Terminal states release the driver, who rejoins the geo index on the next location update.
-- Not included: stale-driver expiry from the geo index, auth, retry/DLQ for Kafka.
+- Also included: stale-driver expiry, JWT auth (rider/driver/admin), Kafka retry + dead-letter handling, business metrics.
 
 ## Run
 
@@ -74,3 +102,15 @@ Raw WebSocket: `ws://localhost:8080/ws/trips/{tripId}` sends `{"kind":"location"
 
 Coverage: Jacoco report at `target/site/jacoco/index.html` after `mvn verify`.
 CI (`.github/workflows/ci.yml`): unit job, integration job (+Jacoco artifact), e2e job (compose up, Playwright install, report upload).
+
+## Ops and delivery
+
+| Area | Where |
+|---|---|
+| Container image (multi-stage, non-root) | `Dockerfile`; run with `docker compose --profile app up -d --build` |
+| Metrics dashboards | `docker compose --profile monitoring up -d` -> Prometheus :9090, Grafana :3000 (provisioned "Ride Hailing Tracking" dashboard) |
+| Load tests (k6) | `k6 run loadtest/location-ingest.js`, `k6 run loadtest/ride-matching.js` (`BASE_URL` env to override) |
+| Kubernetes | `deploy/k8s/deployment.yaml`, validated in CI with kubeconform |
+| Security | CodeQL, Trivy (fs + image), Dependabot |
+| Quality gates | Spotless check and Jacoco 60% line coverage in `mvn verify` |
+| Release | push a tag `vX.Y.Z` to publish `ghcr.io/ashishk9670/ride-hailing-tracking` |

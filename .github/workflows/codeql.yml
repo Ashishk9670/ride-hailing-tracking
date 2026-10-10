@@ -21,5 +21,12 @@ jobs:
       - uses: github/codeql-action/init@v3
         with: { languages: java-kotlin, build-mode: manual }
       - run: mvn -B -ntp -DskipTests package
+      # Code scanning upload needs GitHub Advanced Security on private repos; keep results as an artifact instead.
+      # Remove `upload: never` / `output` and the artifact step if the repo becomes public or GHAS is enabled.
       - uses: github/codeql-action/analyze@v3
-        with: { category: /language:java-kotlin }
+        with:
+          category: /language:java-kotlin
+          upload: never
+          output: codeql-results
+      - uses: actions/upload-artifact@v4
+        with: { name: codeql-sarif, path: codeql-results }
