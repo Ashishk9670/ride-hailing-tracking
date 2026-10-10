@@ -1,0 +1,36 @@
+name: Trivy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 4 * * 1'
+
+jobs:
+  fs-and-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan dependencies and IaC (HIGH/CRITICAL fail the build)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          skip-dirs: e2e/node_modules
+          exit-code: '1'
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t ride-hailing-tracking:scan .
+      - name: Scan image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ride-hailing-tracking:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
