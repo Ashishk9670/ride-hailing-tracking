@@ -1,0 +1,2 @@
+# spring-webmvc XsltView RCE: fix only in Spring Framework 7.x; this app has no XSLT views. Revisit on Boot 4 upgrade.
+CVE-2026-47884
