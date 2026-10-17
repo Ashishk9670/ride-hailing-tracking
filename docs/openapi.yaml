@@ -1,0 +1,192 @@
+openapi: 3.0.3
+info:
+  title: Ride-Hailing Tracking API
+  version: 0.0.1
+  description: |
+    REST API. All endpoints except POST /api/auth/token require `Authorization: Bearer <JWT>` with a role
+    (RIDER, DRIVER, ADMIN). GraphQL is documented in src/main/resources/graphql/schema.graphqls.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /api/auth/token:
+    post:
+      summary: Mint a dev token (disabled outside dev/test)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subject: { type: string }
+                roles: { type: array, items: { type: string, enum: [RIDER, DRIVER, ADMIN] } }
+      responses:
+        '201': { description: Token issued }
+  /api/rides:
+    post:
+      summary: Request a ride; applies surge pricing and returns a pickup ETA when a driver is matched
+      description: Role RIDER. `riderId` must equal the token subject.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RideRequest' }
+      responses:
+        '201':
+          description: Trip created (DRIVER_ASSIGNED or NO_DRIVER_AVAILABLE)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Trip' }
+        '400': { description: Validation error }
+        '403': { description: riderId does not match the caller }
+  /api/trips/{id}:
+    get:
+      summary: Get a trip
+      parameters: [ { $ref: '#/components/parameters/TripId' } ]
+      responses:
+        '200':
+          description: Trip
+          content: { application/json: { schema: { $ref: '#/components/schemas/Trip' } } }
+        '404': { description: Unknown trip }
+  /api/trips/{id}/status:
+    patch:
+      summary: Advance trip status
+      parameters: [ { $ref: '#/components/parameters/TripId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { $ref: '#/components/schemas/TripStatus' } }
+      responses:
+        '200':
+          description: Updated trip
+          content: { application/json: { schema: { $ref: '#/components/schemas/Trip' } } }
+        '409': { description: Illegal transition }
+  /api/trips/{id}/history:
+    get:
+      summary: Stored location history and PostGIS route length
+      parameters: [ { $ref: '#/components/parameters/TripId' } ]
+      responses:
+        '200':
+          description: History
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  points: { type: array, items: { $ref: '#/components/schemas/LocationUpdate' } }
+                  routeLengthMeters: { type: number }
+  /api/trips/{id}/replay:
+    get:
+      summary: Replay the stored route as a Server-Sent Events stream
+      description: |
+        Events: `start` ({points, speed}), `point` (LocationUpdate, event id = index) and `done`.
+        Pacing follows recorded timestamps divided by `speed`; gaps over 5 s are compressed.
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+        - name: speed
+          in: query
+          description: Playback speed multiplier, clamped to 0.1..100
+          schema: { type: number, default: 1 }
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '404': { description: Unknown trip }
+  /api/drivers/{driverId}/location:
+    post:
+      summary: Driver location update (published to Kafka)
+      description: Role DRIVER. `driverId` must equal the token subject.
+      parameters:
+        - name: driverId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lat: { type: number }
+                lon: { type: number }
+                heading: { type: number }
+                speedKmh: { type: number }
+      responses:
+        '202': { description: Accepted }
+  /api/drivers/nearby:
+    get:
+      summary: Available drivers near a point (Redis GEOSEARCH)
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number } }
+        - { name: lon, in: query, required: true, schema: { type: number } }
+        - { name: radiusKm, in: query, schema: { type: number, default: 5 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10 } }
+      responses:
+        '200':
+          description: Drivers, nearest first
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/NearbyDriver' } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    TripId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    TripStatus:
+      type: string
+      enum: [REQUESTED, DRIVER_ASSIGNED, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, CANCELLED, NO_DRIVER_AVAILABLE]
+    RideRequest:
+      type: object
+      required: [riderId, pickupLat, pickupLon, dropoffLat, dropoffLon]
+      properties:
+        riderId: { type: string }
+        pickupLat: { type: number, minimum: -90, maximum: 90 }
+        pickupLon: { type: number, minimum: -180, maximum: 180 }
+        dropoffLat: { type: number, minimum: -90, maximum: 90 }
+        dropoffLon: { type: number, minimum: -180, maximum: 180 }
+    Trip:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        riderId: { type: string }
+        driverId: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/TripStatus' }
+        pickupLat: { type: number }
+        pickupLon: { type: number }
+        dropoffLat: { type: number }
+        dropoffLon: { type: number }
+        surgeMultiplier: { type: number, description: '1.0 means no surge; capped by configuration' }
+        fareEstimate: { type: number, description: 'Fare estimate including the surge multiplier' }
+        etaSeconds: { type: integer, nullable: true, description: 'Driver-to-pickup ETA at match time' }
+    NearbyDriver:
+      type: object
+      properties:
+        driverId: { type: string }
+        distanceMeters: { type: number }
+        lat: { type: number }
+        lon: { type: number }
+    LocationUpdate:
+      type: object
+      properties:
+        driverId: { type: string }
+        tripId: { type: string, nullable: true }
+        lat: { type: number }
+        lon: { type: number }
+        heading: { type: number }
+        speedKmh: { type: number }
+        timestamp: { type: integer, format: int64, description: epoch millis }
