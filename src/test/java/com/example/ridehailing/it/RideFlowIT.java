@@ -47,6 +47,7 @@ class RideFlowIT extends AbstractIntegrationIT {
         assertThat(trip.status().name()).isEqualTo("DRIVER_ASSIGNED");
         assertThat(trip.surgeMultiplier()).isGreaterThanOrEqualTo(1.0);
         assertThat(trip.fareEstimate()).isGreaterThan(0);
+        assertThat(trip.etaSeconds()).isNotNull().isGreaterThanOrEqualTo(0);
         assertThat(trip.driverId()).isEqualTo("it-near");
 
         // matched driver is no longer available

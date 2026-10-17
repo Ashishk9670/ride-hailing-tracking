@@ -26,10 +26,12 @@ public class TripService {
     private final AppProperties props;
     private final AppMetrics metrics;
     private final SurgeService surge;
+    private final EtaService eta;
 
     public TripService(TripRepository trips, DriverGeoIndex geoIndex, DriverTripRegistry registry,
                        DispatchEventPublisher events, AppProperties props, AppMetrics metrics,
-                       SurgeService surge) {
+                       SurgeService surge, EtaService eta) {
+        this.eta = eta;
         this.surge = surge;
         this.metrics = metrics;
         this.trips = trips;
@@ -53,6 +55,7 @@ public class TripService {
         for (NearbyDriver c : candidates) {
             if (geoIndex.claim(c.driverId())) {
                 trip.assignDriver(c.driverId());
+                trip.applyEta(eta.estimateSeconds(c.lat(), c.lon(), req.pickupLat(), req.pickupLon()));
                 registry.assign(c.driverId(), trip.getId().toString());
                 trips.save(trip);
                 metrics.recordMatch(sample, true);
@@ -85,6 +88,6 @@ public class TripService {
     }
 
     private void emit(String type, Trip t) {
-        events.publish(new TripEvent(type, t.getId().toString(), t.getDriverId(), t.getStatus(), System.currentTimeMillis()));
+        events.publish(new TripEvent(type, t.getId().toString(), t.getDriverId(), t.getStatus(), System.currentTimeMillis(), t.getEtaSeconds()));
     }
 }

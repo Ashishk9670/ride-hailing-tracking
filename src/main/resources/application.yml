@@ -74,6 +74,14 @@ ridehailing:
     max-multiplier: 3.0
     base-fare: 2.5
     per-km: 1.2
+  eta:
+    default-speed-kmh: 30
+    min-speed-kmh: 5
+    road-factor: 1.3
+    ema-alpha: 0.2
+    speed-key-prefix: "eta:speed:"
+    speed-ttl-seconds: 900
+    update-throttle-seconds: 5
   retry:
     max-attempts: 4
     initial-interval-ms: 200

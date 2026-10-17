@@ -22,7 +22,7 @@ class SurgeServiceTest {
     SurgeServiceTest() {
         when(redis.opsForValue()).thenReturn(ops);
         AppProperties props = new AppProperties(null, null, null, null,
-                new AppProperties.Surge("s:", 120, 0.5, 3.0, 2.5, 1.2));
+                new AppProperties.Surge("s:", 120, 0.5, 3.0, 2.5, 1.2), null);
         service = new SurgeService(redis, geo, props);
     }
 

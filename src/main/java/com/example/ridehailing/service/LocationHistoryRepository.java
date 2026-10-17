@@ -36,6 +36,15 @@ public class LocationHistoryRepository {
                 tripId);
     }
 
+    /** Straight-line geodesic distance in meters computed by PostGIS. */
+    public double distanceMeters(double lat1, double lon1, double lat2, double lon2) {
+        Double d = jdbc.queryForObject("""
+                SELECT ST_Distance(ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+                                   ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)
+                """, Double.class, lon1, lat1, lon2, lat2);
+        return d == null ? 0 : d;
+    }
+
     /** Route length in meters computed by PostGIS. */
     public double routeLengthMeters(UUID tripId) {
         Double d = jdbc.queryForObject("""

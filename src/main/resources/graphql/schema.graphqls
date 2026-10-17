@@ -21,6 +21,7 @@ type Trip {
     dropoffLon: Float!
     surgeMultiplier: Float!
     fareEstimate: Float!
+    etaSeconds: Int
 }
 
 type NearbyDriver { driverId: String! distanceMeters: Float! lat: Float! lon: Float! }
@@ -35,4 +36,4 @@ type LocationUpdate {
     timestamp: String!
 }
 
-type TripEvent { type: String! tripId: String! driverId: String status: TripStatus timestamp: String! }
+type TripEvent { type: String! tripId: String! driverId: String status: TripStatus timestamp: String! etaSeconds: Int }

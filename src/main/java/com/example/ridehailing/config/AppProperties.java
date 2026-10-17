@@ -3,7 +3,7 @@ package com.example.ridehailing.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "ridehailing")
-public record AppProperties(Topics topics, Redis redis, Matching matching, Retry retry, Surge surge) {
+public record AppProperties(Topics topics, Redis redis, Matching matching, Retry retry, Surge surge, Eta eta) {
     public record Topics(String driverLocations, int partitions) {
         /** Dead-letter topic used by the location consumer (same partition count as the source). */
         public String driverLocationsDlt() { return driverLocations + ".DLT"; }
@@ -31,4 +31,15 @@ public record AppProperties(Topics topics, Redis redis, Matching matching, Retry
      */
     public record Surge(String keyPrefix, long windowSeconds, double sensitivity, double maxMultiplier,
                         double baseFare, double perKm) {}
+
+    /**
+     * @param defaultSpeedKmh used when a cell has no recent speed samples
+     * @param minSpeedKmh floor applied to the average so ETAs stay finite
+     * @param roadFactor straight-line to road distance inflation
+     * @param emaAlpha weight of a new speed sample in the per-cell moving average
+     * @param speedKeyPrefix Redis key prefix; @param speedTtlSeconds sample freshness window
+     * @param updateThrottleSeconds minimum gap between live ETA events per trip
+     */
+    public record Eta(double defaultSpeedKmh, double minSpeedKmh, double roadFactor, double emaAlpha,
+                      String speedKeyPrefix, long speedTtlSeconds, long updateThrottleSeconds) {}
 }

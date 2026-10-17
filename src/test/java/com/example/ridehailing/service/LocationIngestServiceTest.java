@@ -17,8 +17,45 @@ class LocationIngestServiceTest {
     TripEventBroadcaster broadcaster = mock(TripEventBroadcaster.class);
     io.micrometer.core.instrument.simple.SimpleMeterRegistry meters = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
     com.example.ridehailing.metrics.AppMetrics metrics = new com.example.ridehailing.metrics.AppMetrics(meters);
-    LocationIngestService svc = new LocationIngestService(geo, registry, history, broadcaster, metrics);
+    com.example.ridehailing.redis.CellSpeedTracker speeds = mock(com.example.ridehailing.redis.CellSpeedTracker.class);
+    com.example.ridehailing.domain.TripRepository trips = mock(com.example.ridehailing.domain.TripRepository.class);
+    EtaService eta = mock(EtaService.class);
+    org.springframework.data.redis.core.StringRedisTemplate redis = mock(org.springframework.data.redis.core.StringRedisTemplate.class);
+    @SuppressWarnings("unchecked")
+    org.springframework.data.redis.core.ValueOperations<String, String> ops = mock(org.springframework.data.redis.core.ValueOperations.class);
+    com.example.ridehailing.config.AppProperties props = new com.example.ridehailing.config.AppProperties(null, null, null, null, null,
+            new com.example.ridehailing.config.AppProperties.Eta(30, 5, 1.3, 0.2, "eta:", 900, 5));
+    LocationIngestService svc = new LocationIngestService(geo, registry, history, broadcaster, metrics, speeds, trips, eta, redis, props);
     LocationUpdate u = new LocationUpdate("d1", null, 10, 20, 90, 30, 1000L);
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubRedis() { when(redis.opsForValue()).thenReturn(ops); }
+
+    @Test
+    void trackedDriverGetsThrottledEtaEvent() {
+        when(registry.activeTrip("d1")).thenReturn(Optional.of(java.util.UUID.randomUUID().toString()));
+        com.example.ridehailing.domain.Trip trip = new com.example.ridehailing.domain.Trip("r", 1, 1, 2, 2);
+        trip.assignDriver("d1");
+        when(ops.setIfAbsent(any(), any(), any(java.time.Duration.class))).thenReturn(true);
+        when(trips.findById(any())).thenReturn(Optional.of(trip));
+        when(eta.estimateSeconds(10, 20, 1, 1)).thenReturn(300);
+        svc.process(u);
+        ArgumentCaptor<com.example.ridehailing.dto.TripEvent> c = ArgumentCaptor.forClass(com.example.ridehailing.dto.TripEvent.class);
+        verify(broadcaster).publishEvent(c.capture());
+        org.assertj.core.api.Assertions.assertThat(c.getValue().type()).isEqualTo("ETA_UPDATED");
+        org.assertj.core.api.Assertions.assertThat(c.getValue().etaSeconds()).isEqualTo(300);
+    }
+
+    @Test
+    void etaIsThrottledAndFailuresDoNotBreakIngest() {
+        when(registry.activeTrip("d1")).thenReturn(Optional.of(java.util.UUID.randomUUID().toString()));
+        when(ops.setIfAbsent(any(), any(), any(java.time.Duration.class))).thenReturn(false);
+        svc.process(u);
+        verify(broadcaster, never()).publishEvent(any());
+        when(ops.setIfAbsent(any(), any(), any(java.time.Duration.class))).thenThrow(new RuntimeException("redis down"));
+        svc.process(u);
+        verify(broadcaster, times(2)).publishLocation(any());
+    }
 
     @Test
     void idleDriverUpdatesGeoIndexOnly() {
@@ -26,6 +63,7 @@ class LocationIngestServiceTest {
         svc.process(u);
         verify(geo).upsert("d1", 10, 20);
         verifyNoInteractions(history, broadcaster);
+        verify(speeds).record(10, 20, 30);
     }
 
     @Test
