@@ -68,6 +68,13 @@ class RideFlowIT extends AbstractIntegrationIT {
             assertThat(((Number) h.get("routeLengthMeters")).doubleValue()).isBetween(150.0, 300.0);
         });
 
+        // stored route replays as an SSE stream: start, 3 points, done
+        String sse = rest.getForObject("/api/trips/{id}/replay?speed=100", String.class, trip.id());
+        assertThat(sse).contains("event:start", "event:done");
+        assertThat(sse.split("event:point", -1)).hasSize(4);
+        assertThat(rest.getForEntity("/api/trips/{id}/replay", String.class, java.util.UUID.randomUUID())
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
         for (String s : List.of("DRIVER_ARRIVED", "IN_PROGRESS", "COMPLETED")) {
             var ok = rest.exchange("/api/trips/{id}/status", HttpMethod.PATCH,
                     new HttpEntity<>(Map.of("status", s)), TripView.class, trip.id());

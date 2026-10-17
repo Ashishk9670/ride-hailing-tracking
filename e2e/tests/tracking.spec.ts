@@ -74,6 +74,45 @@ test.describe('live tracking UI', () => {
     await page.screenshot({ path: 'screenshots/trip-completed.png' });
   });
 
+  test('replay a trip route on the map at adjustable speed', async ({ page, request }) => {
+    await page.goto('/');
+    await page.selectOption('#login-role', 'operator');
+    await page.click('#btn-login');
+    await expect(page.locator('#auth-state')).toContainText('[RIDER,ADMIN]');
+    await page.click('#btn-sim');
+
+    const rider = await tokenFor(request, 'replay-poller', ['RIDER']);
+    await expect.poll(async () => {
+      const r = await request.get('/api/drivers/nearby?lat=37.7749&lon=-122.4194&radiusKm=10', { headers: { Authorization: rider } });
+      return (await r.json()).length;
+    }, { timeout: 45_000 }).toBeGreaterThan(0);
+
+    await page.click('#btn-request');
+    await expect(page.locator('#trip-status')).toHaveText('DRIVER_ASSIGNED');
+    // let the simulator produce a few stored history points
+    await expect.poll(async () => Number(await page.locator('#update-count').textContent()), { timeout: 30_000 })
+      .toBeGreaterThanOrEqual(4);
+
+    const tripId = await page.locator('#trip-id').inputValue();
+    await page.selectOption('#replay-speed', '50');
+    await page.click('#btn-replay');
+    await expect(page.locator('#replay-state')).toHaveText('finished');
+    expect(Number(await page.locator('#replay-count').textContent())).toBeGreaterThanOrEqual(3);
+    await expect(page.locator('.replay-marker')).toHaveCount(1);
+    await page.screenshot({ path: 'screenshots/trip-replay.png' });
+
+    // the API itself streams SSE with start / point / done events
+    const sse = await request.get(`/api/trips/${tripId}/replay?speed=100`, { headers: { Authorization: rider } });
+    expect(sse.status()).toBe(200);
+    expect(sse.headers()['content-type']).toContain('text/event-stream');
+    const body = await sse.text();
+    expect(body).toContain('event:start');
+    expect(body).toContain('event:point');
+    expect(body).toContain('event:done');
+
+    expect((await request.get('/api/trips/00000000-0000-0000-0000-000000000000/replay', { headers: { Authorization: rider } })).status()).toBe(404);
+  });
+
   test('raw WebSocket refuses connections without a valid token', async ({ page }) => {
     await page.goto('/');
     const result = await page.evaluate(() => new Promise<string>((resolve) => {
