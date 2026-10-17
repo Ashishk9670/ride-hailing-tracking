@@ -4,6 +4,7 @@ import com.example.ridehailing.config.AppProperties;
 import com.example.ridehailing.dto.NearbyDriver;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.data.redis.domain.geo.BoundingBox;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResult;
 import org.springframework.data.geo.GeoResults;
@@ -76,6 +77,17 @@ public class DriverGeoIndex {
                     p == null ? lat : p.getY(), p == null ? lon : p.getX()));
         }
         return out;
+    }
+
+    /** Number of available drivers inside the square cell (edge in degrees) centered on the point. */
+    public long countInCell(double centerLat, double centerLon, double cellDeg) {
+        double heightKm = cellDeg * 111.32;
+        double widthKm = heightKm * Math.max(Math.cos(Math.toRadians(centerLat)), 0.01);
+        GeoResults<GeoLocation<String>> r = redis.opsForGeo().search(key,
+                GeoReference.fromCoordinate(centerLon, centerLat),
+                new BoundingBox(widthKm, heightKm, Metrics.KILOMETERS),
+                GeoSearchCommandArgs.newGeoSearchArgs().limit(1000));
+        return r == null ? 0 : r.getContent().size();
     }
 
     /** Atomically claims a driver: only one caller gets true because ZREM returns 1 once. */

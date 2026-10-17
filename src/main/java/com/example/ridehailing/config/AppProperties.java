@@ -3,7 +3,7 @@ package com.example.ridehailing.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "ridehailing")
-public record AppProperties(Topics topics, Redis redis, Matching matching, Retry retry) {
+public record AppProperties(Topics topics, Redis redis, Matching matching, Retry retry, Surge surge) {
     public record Topics(String driverLocations, int partitions) {
         /** Dead-letter topic used by the location consumer (same partition count as the source). */
         public String driverLocationsDlt() { return driverLocations + ".DLT"; }
@@ -21,4 +21,14 @@ public record AppProperties(Topics topics, Redis redis, Matching matching, Retry
 
     /** Retry policy of the Kafka location consumer before a record is dead-lettered. */
     public record Retry(int maxAttempts, long initialIntervalMs, double multiplier, long maxIntervalMs) {}
+
+    /**
+     * @param keyPrefix Redis key prefix of per-cell demand counters
+     * @param windowSeconds demand counting window (TTL refreshed on each request)
+     * @param sensitivity multiplier increase per unit of demand/supply ratio above 1
+     * @param maxMultiplier surge cap
+     * @param baseFare flat fare component; @param perKm distance component
+     */
+    public record Surge(String keyPrefix, long windowSeconds, double sensitivity, double maxMultiplier,
+                        double baseFare, double perKm) {}
 }

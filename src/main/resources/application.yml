@@ -67,6 +67,13 @@ ridehailing:
   matching:
     radius-km: 5
     max-candidates: 5
+  surge:
+    key-prefix: "surge:demand:"
+    window-seconds: 300
+    sensitivity: 0.5
+    max-multiplier: 3.0
+    base-fare: 2.5
+    per-km: 1.2
   retry:
     max-attempts: 4
     initial-interval-ms: 200

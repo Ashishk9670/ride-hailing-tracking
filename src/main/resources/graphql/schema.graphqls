@@ -19,6 +19,8 @@ type Trip {
     pickupLon: Float!
     dropoffLat: Float!
     dropoffLon: Float!
+    surgeMultiplier: Float!
+    fareEstimate: Float!
 }
 
 type NearbyDriver { driverId: String! distanceMeters: Float! lat: Float! lon: Float! }

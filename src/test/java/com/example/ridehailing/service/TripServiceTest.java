@@ -33,6 +33,7 @@ class TripServiceTest {
     DispatchEventPublisher events = mock(DispatchEventPublisher.class);
     SimpleMeterRegistry meters = new SimpleMeterRegistry();
     AppMetrics metrics = new AppMetrics(meters);
+    SurgeService surge = mock(SurgeService.class);
     TripService service;
     final RideRequest req = new RideRequest("rider", 37.77, -122.41, 37.80, -122.40);
 
@@ -40,9 +41,11 @@ class TripServiceTest {
     void setUp() {
         AppProperties props = new AppProperties(new AppProperties.Topics("t", 1),
                 new AppProperties.Redis("geo", "chan", "seen", 30, 5000), new AppProperties.Matching(5, 3),
-                new AppProperties.Retry(3, 10, 2.0, 100));
+                new AppProperties.Retry(3, 10, 2.0, 100),
+                new AppProperties.Surge("surge:", 300, 0.5, 3.0, 2.5, 1.2));
         when(trips.save(any(Trip.class))).thenAnswer(i -> i.getArgument(0));
-        service = new TripService(trips, geo, registry, events, props, metrics);
+        when(surge.recordDemandAndQuote(anyDouble(), anyDouble())).thenReturn(new SurgeService.Quote("c", 4, 2, 1.5));
+        service = new TripService(trips, geo, registry, events, props, metrics, surge);
     }
 
     @Test
@@ -62,6 +65,15 @@ class TripServiceTest {
         ArgumentCaptor<TripEvent> ev = ArgumentCaptor.forClass(TripEvent.class);
         verify(events, times(2)).publish(ev.capture());
         assertThat(ev.getAllValues()).extracting(TripEvent::type).containsExactly("TRIP_REQUESTED", "DRIVER_ASSIGNED");
+    }
+
+    @Test
+    void appliesSurgeMultiplierToFare() {
+        when(geo.findNearest(anyDouble(), anyDouble(), anyDouble(), anyInt())).thenReturn(List.of());
+        Trip t = service.requestRide(req);
+        double km = GeoUtils.haversineMeters(37.77, -122.41, 37.80, -122.40);
+        assertThat(t.getSurgeMultiplier()).isEqualTo(1.5);
+        assertThat(t.getFareEstimate()).isEqualTo(SurgePricing.fare(km, 2.5, 1.2, 1.5));
     }
 
     @Test

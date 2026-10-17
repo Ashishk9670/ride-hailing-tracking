@@ -45,6 +45,8 @@ class RideFlowIT extends AbstractIntegrationIT {
                 Map.of("riderId", "rider-1", "pickupLat", 40.7129, "pickupLon", -74.0061,
                         "dropoffLat", 40.73, "dropoffLon", -73.99), TripView.class);
         assertThat(trip.status().name()).isEqualTo("DRIVER_ASSIGNED");
+        assertThat(trip.surgeMultiplier()).isGreaterThanOrEqualTo(1.0);
+        assertThat(trip.fareEstimate()).isGreaterThan(0);
         assertThat(trip.driverId()).isEqualTo("it-near");
 
         // matched driver is no longer available
