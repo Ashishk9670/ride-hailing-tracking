@@ -7,17 +7,17 @@ public final class SurgePricing {
     /** Grid cell edge in degrees (about 1.1 km of latitude). */
     public static final double CELL_DEG = 0.01;
 
-    /** Cell id of the fixed lat/lon grid, geohash-like but trivially invertible. */
+    private static long latIdx(double lat) { return (long) Math.floor((lat + 90) / CELL_DEG); }
+    private static long lonIdx(double lon) { return (long) Math.floor((lon + 180) / CELL_DEG); }
+
+    /** Cell id of the fixed lat/lon grid, geohash-like: "latIndex:lonIndex". */
     public static String cellId(double lat, double lon) {
-        return Math.floorDiv((long) Math.floor((lat + 90) * 1e6), (long) (CELL_DEG * 1e6)) + ":"
-                + Math.floorDiv((long) Math.floor((lon + 180) * 1e6), (long) (CELL_DEG * 1e6));
+        return latIdx(lat) + ":" + lonIdx(lon);
     }
 
-    /** Center {lat, lon} of the cell containing the point. */
+    /** Center {lat, lon} of the cell containing the point (derived from the same indices as {@link #cellId}). */
     public static double[] cellCenter(double lat, double lon) {
-        double la = Math.floor((lat + 90) / CELL_DEG) * CELL_DEG - 90 + CELL_DEG / 2;
-        double lo = Math.floor((lon + 180) / CELL_DEG) * CELL_DEG - 180 + CELL_DEG / 2;
-        return new double[]{la, lo};
+        return new double[]{(latIdx(lat) + 0.5) * CELL_DEG - 90, (lonIdx(lon) + 0.5) * CELL_DEG - 180};
     }
 
     /**
