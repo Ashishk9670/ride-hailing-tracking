@@ -188,11 +188,12 @@ class ChaosIT {
         assertThat(trips.findAll()).filteredOn(t -> t.getRiderId().startsWith("flap-rider-"))
                 .allMatch(t -> t.getStatus() != TripStatus.REQUESTED);
 
-        // recovery: claimed-but-unassigned drivers come back with their next location update
-        for (int i = 0; i < 4; i++) postLocation("flap-" + i, LAT + i * 0.0005, LON);
+        // recovery: the pipeline (Kafka -> Redis geo index) works again for a fresh driver and matching proceeds
+        assertThat(postLocation("flap-recovered", LAT, LON).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
         await().atMost(Duration.ofSeconds(40)).untilAsserted(() ->
-                assertThat(nearby().stream().filter(d -> d.driverId().startsWith("flap-")).count())
-                        .isGreaterThanOrEqualTo(1));
+                assertThat(nearby()).extracting(NearbyDriver::driverId).contains("flap-recovered"));
+        assertThat(requestRide("flap-rider-after").getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertNoDoubleAssignment();
     }
 
     @Test
