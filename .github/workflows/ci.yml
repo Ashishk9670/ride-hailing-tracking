@@ -97,3 +97,16 @@ jobs:
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
       - name: Validate manifests against Kubernetes schemas
         run: ./kubeconform -strict -summary -kubernetes-version 1.30.0 deploy/k8s
+
+  monitoring-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Prometheus config and alert rules
+        run: |
+          docker run --rm --entrypoint promtool -v "$PWD/monitoring:/m:ro" prom/prometheus:v2.55.1 check rules /m/alerts/slo.rules.yml
+          docker run --rm --entrypoint promtool -v "$PWD/monitoring:/m:ro" prom/prometheus:v2.55.1 test rules /m/alerts/slo.rules.test.yml
+      - name: Verify Loki and Tempo configs
+        run: |
+          docker run --rm -v "$PWD/monitoring/loki.yml:/c.yml:ro" grafana/loki:3.2.1 -config.file=/c.yml -verify-config
+          docker run --rm -v "$PWD/monitoring/tempo.yml:/c.yml:ro" grafana/tempo:2.6.1 -config.file=/c.yml -config.verify

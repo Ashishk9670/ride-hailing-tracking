@@ -6,3 +6,5 @@ scrape_configs:
     static_configs:
       # app running on the host (mvn spring-boot:run); use app:8080 when using the `app` compose profile
       - targets: ["host.docker.internal:8080", "app:8080"]
+rule_files:
+  - /etc/prometheus/alerts/*.rules.yml

@@ -1,0 +1,77 @@
+rule_files:
+  - slo.rules.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      # every match lands above the 1s bucket => p95 is the top finite bound (1s) > 500ms
+      - series: 'rides_match_latency_seconds_bucket{le="0.5",result="matched"}'
+        values: '0+0x30'
+      - series: 'rides_match_latency_seconds_bucket{le="1.0",result="matched"}'
+        values: '0+0x30'
+      - series: 'rides_match_latency_seconds_bucket{le="+Inf",result="matched"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MatchLatencySLOBreach
+        exp_alerts: []   # pending, not firing yet (for: 10m)
+      - eval_time: 20m
+        alertname: MatchLatencySLOBreach
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "p95 ride match latency 1s exceeds 500ms"
+              runbook_url: https://github.com/Ashishk9670/ride-hailing-tracking/blob/main/docs/runbooks/match-latency.md
+  - interval: 1m
+    input_series:
+      - series: 'rides_match_latency_seconds_bucket{le="0.5",result="matched"}'
+        values: '0+10x30'
+      - series: 'rides_match_latency_seconds_bucket{le="+Inf",result="matched"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: MatchLatencySLOBreach
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'location_dlt_total'
+        values: '0+5x30'
+      - series: 'driver_location_updates_total{stage="processed"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: LocationDeadLetterRateHigh
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "5% of location updates are dead-lettered"
+              runbook_url: https://github.com/Ashishk9670/ride-hailing-tracking/blob/main/docs/runbooks/dlt-rate.md
+  - interval: 1m
+    input_series:
+      - series: 'location_dlt_total'
+        values: '0x30'
+      - series: 'driver_location_updates_total{stage="processed"}'
+        values: '0+100x30'
+      - series: 'driver_location_lag_seconds_bucket{le="5.0"}'
+        values: '0+100x30'
+      - series: 'driver_location_lag_seconds_bucket{le="+Inf"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: LocationDeadLetterRateHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: LocationLagSLOBreach
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'up{job="ride-hailing-tracking",instance="app:8080"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: RideAppDown
+        exp_alerts:
+          - exp_labels: { severity: critical, job: ride-hailing-tracking, instance: "app:8080" }
+            exp_annotations:
+              summary: "ride-hailing-tracking target app:8080 is down"
+              runbook_url: https://github.com/Ashishk9670/ride-hailing-tracking/blob/main/docs/runbooks/app-down.md

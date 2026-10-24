@@ -1,0 +1,52 @@
+# SLOs for ride-hailing-tracking. Runbooks live in docs/runbooks/.
+#   match latency : p95 of rides_match_latency_seconds < 500ms
+#   location lag  : p95 of driver_location_lag_seconds < 5s (API receipt -> processed)
+#   DLT rate      : < 1% of consumed location updates dead-lettered
+groups:
+  - name: ride-hailing-slo-recording
+    rules:
+      - record: job:rides_match_latency_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(rides_match_latency_seconds_bucket[5m])))
+      - record: job:driver_location_lag_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(driver_location_lag_seconds_bucket[5m])))
+      - record: job:location_dlt:ratio_10m
+        expr: |
+          sum(increase(location_dlt_total[10m]))
+            / clamp_min(sum(increase(driver_location_updates_total{stage="processed"}[10m])), 1)
+  - name: ride-hailing-slo-alerts
+    rules:
+      - alert: RideAppDown
+        expr: up{job="ride-hailing-tracking"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "ride-hailing-tracking target {{ $labels.instance }} is down"
+          runbook_url: https://github.com/Ashishk9670/ride-hailing-tracking/blob/main/docs/runbooks/app-down.md
+      - alert: MatchLatencySLOBreach
+        expr: job:rides_match_latency_seconds:p95_5m > 0.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 ride match latency {{ $value | humanizeDuration }} exceeds 500ms"
+          runbook_url: https://github.com/Ashishk9670/ride-hailing-tracking/blob/main/docs/runbooks/match-latency.md
+      - alert: LocationLagSLOBreach
+        expr: job:driver_location_lag_seconds:p95_5m > 5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 location ingest lag {{ $value | humanizeDuration }} exceeds 5s"
+          runbook_url: https://github.com/Ashishk9670/ride-hailing-tracking/blob/main/docs/runbooks/location-lag.md
+      - alert: LocationDeadLetterRateHigh
+        expr: job:location_dlt:ratio_10m > 0.01
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of location updates are dead-lettered"
+          runbook_url: https://github.com/Ashishk9670/ride-hailing-tracking/blob/main/docs/runbooks/dlt-rate.md
+      - alert: LocationDeadLetterSeen
+        expr: sum(increase(location_dlt_total[10m])) > 0
+        for: 0m
+        labels: { severity: info }
+        annotations:
+          summary: "Dead-lettered location records in the last 10m"
+          runbook_url: https://github.com/Ashishk9670/ride-hailing-tracking/blob/main/docs/runbooks/dlt-rate.md

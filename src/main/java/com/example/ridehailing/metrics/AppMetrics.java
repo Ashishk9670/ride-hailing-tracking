@@ -13,6 +13,7 @@ public class AppMetrics {
     private final Counter processed;
     private final Counter dlt;
     private final Counter expired;
+    private final Timer lag;
 
     public AppMetrics(MeterRegistry registry) {
         this.registry = registry;
@@ -27,6 +28,9 @@ public class AppMetrics {
         // drivers_expired_total
         this.expired = Counter.builder("drivers.expired")
                 .description("Stale drivers evicted from the Redis geo index").register(registry);
+        // driver_location_lag_seconds_bucket: API receipt -> Kafka consume/processing (end-to-end ingest lag)
+        this.lag = Timer.builder("driver.location.lag").description("Delay between API receipt and processing of a location update")
+                .publishPercentileHistogram().register(registry);
         for (String result : new String[]{"matched", "no_driver"}) { // visible at 0 before the first ride
             registry.counter("rides.matches", "result", result);
             matchTimer(result);
@@ -41,6 +45,10 @@ public class AppMetrics {
     public void locationReceived() { received.increment(); }
 
     public void locationProcessed() { processed.increment(); }
+
+    public void locationLag(long receivedAtEpochMillis) {
+        lag.record(Math.max(0, System.currentTimeMillis() - receivedAtEpochMillis), java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
 
     public void deadLettered() { dlt.increment(); }
 
