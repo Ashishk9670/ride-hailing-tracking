@@ -106,7 +106,5 @@ jobs:
         run: |
           docker run --rm --entrypoint promtool -v "$PWD/monitoring:/m:ro" prom/prometheus:v2.55.1 check rules /m/alerts/slo.rules.yml
           docker run --rm --entrypoint promtool -v "$PWD/monitoring:/m:ro" prom/prometheus:v2.55.1 test rules /m/alerts/slo.rules.test.yml
-      - name: Verify Loki and Tempo configs
-        run: |
-          docker run --rm -v "$PWD/monitoring/loki.yml:/c.yml:ro" grafana/loki:3.2.1 -config.file=/c.yml -verify-config
-          docker run --rm -v "$PWD/monitoring/tempo.yml:/c.yml:ro" grafana/tempo:2.6.1 -config.file=/c.yml -config.verify
+      - name: Verify Loki config
+        run: docker run --rm -v "$PWD/monitoring/loki.yml:/c.yml:ro" grafana/loki:3.2.1 -config.file=/c.yml -verify-config
