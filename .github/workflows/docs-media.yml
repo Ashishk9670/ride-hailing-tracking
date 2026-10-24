@@ -1,0 +1,49 @@
+name: Docs media
+
+# Captures README screenshots + GIF of the live map and trip replay. Download the artifact and commit docs/img.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21', cache: maven }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: docker compose up -d --wait
+      - run: mvn -B -ntp -DskipTests package
+      - name: Start app
+        run: |
+          nohup java -jar target/ride-hailing-tracking-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:8080/actuator/health && break; sleep 2; done
+      - name: Install Playwright and ffmpeg
+        working-directory: e2e
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+          sudo apt-get install -y ffmpeg
+      - name: Capture
+        working-directory: e2e
+        env:
+          DOCS_IMG_DIR: ${{ github.workspace }}/docs/img
+        run: |
+          mkdir -p "$DOCS_IMG_DIR"
+          npx playwright test -c playwright.demo.config.ts
+          VIDEO=$(find demo-results -name '*.webm' | head -1)
+          ffmpeg -y -i "$VIDEO" -vf "fps=8,scale=960:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -loop 0 "$DOCS_IMG_DIR/demo.gif"
+          ls -la "$DOCS_IMG_DIR"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docs-img
+          path: |
+            docs/img
+            app.log
+      - if: always()
+        run: docker compose down -v
