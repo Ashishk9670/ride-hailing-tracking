@@ -36,7 +36,7 @@ jobs:
           mkdir -p "$DOCS_IMG_DIR"
           npx playwright test -c playwright.demo.config.ts
           VIDEO=$(find demo-results -name '*.webm' | head -1)
-          ffmpeg -y -i "$VIDEO" -vf "fps=8,scale=960:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -loop 0 "$DOCS_IMG_DIR/demo.gif"
+          ffmpeg -y -i "$VIDEO" -t 45 -vf "fps=4,scale=720:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=64[p];[s1][p]paletteuse=dither=bayer" -loop 0 "$DOCS_IMG_DIR/demo.gif"
           ls -la "$DOCS_IMG_DIR"
       - uses: actions/upload-artifact@v4
         if: always()
