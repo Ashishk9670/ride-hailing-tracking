@@ -110,10 +110,14 @@
         <pit.threshold>0</pit.threshold>
         <!-- keep the JaCoCo agent out of the PIT minions -->
         <jacoco.skip>true</jacoco.skip>
-        <argLine>-Dpit.run=true</argLine>
       </properties>
       <build>
         <plugins>
+          <plugin>
+            <!-- PIT reads surefire's argLine; drop the unresolved @{argLine} placeholder -->
+            <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+            <configuration><argLine>-Dnet.bytebuddy.experimental=true</argLine></configuration>
+          </plugin>
           <plugin>
             <groupId>org.pitest</groupId><artifactId>pitest-maven</artifactId><version>1.17.4</version>
             <dependencies>
