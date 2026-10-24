@@ -15,6 +15,9 @@ spring:
     redis:
       host: localhost
       port: 6379
+      # fail fast when Redis is unreachable instead of hanging request threads (default is 60s)
+      timeout: 2s
+      connect-timeout: 2s
   kafka:
     bootstrap-servers: localhost:9092
     producer:
@@ -23,6 +26,10 @@ spring:
       properties:
         spring.json.add.type.headers: false
         linger.ms: 5
+        # bounded blocking so a Kafka outage surfaces as a quick 503 instead of a hung request
+        max.block.ms: 2000
+        request.timeout.ms: 2000
+        delivery.timeout.ms: 5000
     consumer:
       group-id: location-ingest
       auto-offset-reset: latest
