@@ -106,7 +106,12 @@
     <!-- Mutation testing (optional): mvn -Pmutation test-compile org.pitest:pitest-maven:mutationCoverage -->
     <profile>
       <id>mutation</id>
-      <properties><pit.threshold>0</pit.threshold></properties>
+      <properties>
+        <pit.threshold>0</pit.threshold>
+        <!-- keep the JaCoCo agent out of the PIT minions -->
+        <jacoco.skip>true</jacoco.skip>
+        <argLine>-Dpit.run=true</argLine>
+      </properties>
       <build>
         <plugins>
           <plugin>
