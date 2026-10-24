@@ -1,0 +1,31 @@
+# Argo CD Application: deploys the Helm chart from this repo. Apply to the argocd namespace.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ride-hailing-tracking
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Ashishk9670/ride-hailing-tracking.git
+    targetRevision: main
+    path: deploy/helm/ride-hailing-tracking
+    helm:
+      releaseName: ride-hailing
+      valuesObject:
+        image:
+          tag: latest   # pin an immutable tag/digest in real use
+        secret:
+          existingSecret: ride-hailing-secrets   # provided by deploy/examples/external-secret.yaml
+        config:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://postgres.data.svc:5432/rides
+          SPRING_DATA_REDIS_HOST: redis.data.svc
+          SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka.data.svc:9092
+          DEV_TOKEN_ENDPOINT_ENABLED: "false"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ride-hailing
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

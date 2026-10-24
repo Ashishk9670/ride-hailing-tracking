@@ -1,0 +1,15 @@
+# Exercises every optional template in CI (helm lint / template | kubeconform).
+replicaCount: 3
+autoscaling: { enabled: false }
+ingress:
+  enabled: true
+  className: nginx
+  tls:
+    - secretName: rides-tls
+      hosts: [rides.example.com]
+secret:
+  create: true
+  values:
+    SPRING_DATASOURCE_USERNAME: ci
+    SPRING_DATASOURCE_PASSWORD: ci-placeholder
+    RIDEHAILING_JWT_SECRET: ci-placeholder-not-a-real-secret-0123456789

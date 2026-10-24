@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rht.fullname" . }}
+  labels: {{- include "rht.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "rht.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "rht.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ if .Values.serviceAccount.create }}{{ include "rht.fullname" . }}{{ else }}default{{ end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: {{ include "rht.fullname" . }} }
+            - secretRef: { name: {{ include "rht.secretName" . }} }
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -108,3 +108,29 @@ jobs:
           docker run --rm --entrypoint promtool -v "$PWD/monitoring:/m:ro" prom/prometheus:v2.55.1 test rules /m/alerts/slo.rules.test.yml
       - name: Verify Loki config
         run: docker run --rm -v "$PWD/monitoring/loki.yml:/c.yml:ro" grafana/loki:3.2.1 -config.file=/c.yml -verify-config
+
+  helm-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with: { version: v3.16.4 }
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+      - name: helm lint
+        run: |
+          helm lint deploy/helm/ride-hailing-tracking
+          helm lint deploy/helm/ride-hailing-tracking -f deploy/helm/ride-hailing-tracking/ci/full-values.yaml
+      - name: helm template | kubeconform
+        run: |
+          for v in "" "-f deploy/helm/ride-hailing-tracking/ci/full-values.yaml"; do
+            helm template rides deploy/helm/ride-hailing-tracking $v \
+              | ./kubeconform -strict -summary -kubernetes-version 1.30.0
+          done
+      - name: Validate examples (External Secrets, Sealed Secrets, Argo CD) against the CRD catalog
+        run: |
+          ./kubeconform -strict -summary -kubernetes-version 1.30.0 \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            deploy/examples deploy/argocd
