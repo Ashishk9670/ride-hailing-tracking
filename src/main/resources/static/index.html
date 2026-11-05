@@ -33,6 +33,16 @@
   <button id="btn-arrived">Driver arrived</button>
   <button id="btn-start">Start trip</button>
   <button id="btn-complete">Complete trip</button>
+  <fieldset id="replay" style="margin:6px 0">
+    <legend>Replay stored route</legend>
+    <select id="replay-speed" style="width:100%">
+      <option value="1">1x</option><option value="2">2x</option><option value="5">5x</option>
+      <option value="10">10x</option><option value="50">50x</option>
+    </select>
+    <button id="btn-replay">Replay trip</button>
+    <button id="btn-replay-stop">Stop replay</button>
+    <div>State: <span id="replay-state">idle</span>, points: <span id="replay-count">0</span></div>
+  </fieldset>
   <dl>
     <dt>Connection</dt><dd id="conn">idle</dd>
     <dt>Trip status</dt><dd id="trip-status">-</dd>
@@ -101,6 +111,54 @@ $('btn-request').onclick = async () => {
   if (pickupMarker) pickupMarker.remove();
   pickupMarker = L.circleMarker([c.lat, c.lng], {radius: 8, color: 'green'}).addTo(map);
   track(t.id);
+};
+let replayAbort = null, replayMarker = null, replayTrail = null;
+function stopReplay(state) {
+  if (replayAbort) { replayAbort.abort(); replayAbort = null; }
+  if (state) $('replay-state').textContent = state;
+}
+$('btn-replay-stop').onclick = () => stopReplay('stopped');
+$('btn-replay').onclick = async () => {
+  const id = $('trip-id').value.trim();
+  if (!id) { log('replay: no trip id'); return; }
+  stopReplay();
+  if (replayMarker) { replayMarker.remove(); replayMarker = null; }
+  if (replayTrail) { replayTrail.remove(); }
+  replayTrail = L.polyline([], {color: 'orange', className: 'replay-trail'}).addTo(map);
+  $('replay-count').textContent = '0';
+  $('replay-state').textContent = 'loading';
+  const ctl = new AbortController(); replayAbort = ctl;
+  const headers = {}; if (token) headers['Authorization'] = 'Bearer ' + token;
+  try {
+    const r = await fetch('/api/trips/' + id + '/replay?speed=' + $('replay-speed').value, {headers, signal: ctl.signal});
+    if (!r.ok) { log('GET replay -> ' + r.status); $('replay-state').textContent = 'error'; return; }
+    $('replay-state').textContent = 'playing';
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = '', n = 0;
+    for (;;) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream: true});
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i); buf = buf.slice(i + 2);
+        let name = 'message', data = '';
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event:')) name = line.slice(6).trim();
+          else if (line.startsWith('data:')) data += line.slice(5).trim();
+        }
+        if (name === 'point') {
+          const p = JSON.parse(data), ll = [p.lat, p.lon];
+          if (!replayMarker) replayMarker = L.circleMarker(ll, {radius: 9, color: 'orange', className: 'replay-marker'}).addTo(map);
+          else replayMarker.setLatLng(ll);
+          replayTrail.addLatLng(ll); map.panTo(ll);
+          $('replay-count').textContent = ++n;
+        } else if (name === 'done') { $('replay-state').textContent = 'finished'; }
+      }
+    }
+    if ($('replay-state').textContent === 'playing') $('replay-state').textContent = 'finished';
+  } catch (e) {
+    if (e.name !== 'AbortError') { log('replay failed: ' + e); $('replay-state').textContent = 'error'; }
+  }
 };
 $('btn-track').onclick = () => track($('trip-id').value.trim());
 const setTo = s => async () => { const t = await api('PATCH', '/api/trips/' + $('trip-id').value.trim() + '/status', {status: s}); if (t) setStatus(t); };

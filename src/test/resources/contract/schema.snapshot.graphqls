@@ -1,0 +1,59 @@
+type LocationUpdate {
+  driverId: String!
+  heading: Float!
+  lat: Float!
+  lon: Float!
+  speedKmh: Float!
+  timestamp: String!
+  tripId: String
+}
+
+type NearbyDriver {
+  distanceMeters: Float!
+  driverId: String!
+  lat: Float!
+  lon: Float!
+}
+
+type Query {
+  nearbyDrivers(lat: Float!, lon: Float!, radiusKm: Float = 5): [NearbyDriver!]!
+  trip(id: ID!): Trip
+}
+
+type Subscription {
+  tripLocation(tripId: ID!): LocationUpdate!
+  tripStatus(tripId: ID!): TripEvent!
+}
+
+type Trip {
+  driverId: String
+  dropoffLat: Float!
+  dropoffLon: Float!
+  etaSeconds: Int
+  fareEstimate: Float!
+  id: ID!
+  pickupLat: Float!
+  pickupLon: Float!
+  riderId: String!
+  status: TripStatus!
+  surgeMultiplier: Float!
+}
+
+type TripEvent {
+  driverId: String
+  etaSeconds: Int
+  status: TripStatus
+  timestamp: String!
+  tripId: String!
+  type: String!
+}
+
+enum TripStatus {
+  CANCELLED
+  COMPLETED
+  DRIVER_ARRIVED
+  DRIVER_ASSIGNED
+  IN_PROGRESS
+  NO_DRIVER_AVAILABLE
+  REQUESTED
+}

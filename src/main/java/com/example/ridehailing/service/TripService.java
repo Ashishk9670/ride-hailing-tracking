@@ -25,9 +25,14 @@ public class TripService {
     private final DispatchEventPublisher events;
     private final AppProperties props;
     private final AppMetrics metrics;
+    private final SurgeService surge;
+    private final EtaService eta;
 
     public TripService(TripRepository trips, DriverGeoIndex geoIndex, DriverTripRegistry registry,
-                       DispatchEventPublisher events, AppProperties props, AppMetrics metrics) {
+                       DispatchEventPublisher events, AppProperties props, AppMetrics metrics,
+                       SurgeService surge, EtaService eta) {
+        this.eta = eta;
+        this.surge = surge;
         this.metrics = metrics;
         this.trips = trips;
         this.geoIndex = geoIndex;
@@ -39,6 +44,10 @@ public class TripService {
     @Transactional
     public Trip requestRide(RideRequest req) {
         Trip trip = trips.save(new Trip(req.riderId(), req.pickupLat(), req.pickupLon(), req.dropoffLat(), req.dropoffLon()));
+        SurgeService.Quote quote = surge.recordDemandAndQuote(req.pickupLat(), req.pickupLon());
+        double km = GeoUtils.haversineMeters(req.pickupLat(), req.pickupLon(), req.dropoffLat(), req.dropoffLon());
+        trip.applyPricing(quote.multiplier(), SurgePricing.fare(km, props.surge().baseFare(), props.surge().perKm(), quote.multiplier()));
+        trips.save(trip);
         emit("TRIP_REQUESTED", trip);
         Timer.Sample sample = metrics.startMatch();
         List<NearbyDriver> candidates = geoIndex.findNearest(req.pickupLat(), req.pickupLon(),
@@ -46,6 +55,7 @@ public class TripService {
         for (NearbyDriver c : candidates) {
             if (geoIndex.claim(c.driverId())) {
                 trip.assignDriver(c.driverId());
+                trip.applyEta(eta.estimateSeconds(c.lat(), c.lon(), req.pickupLat(), req.pickupLon()));
                 registry.assign(c.driverId(), trip.getId().toString());
                 trips.save(trip);
                 metrics.recordMatch(sample, true);
@@ -78,6 +88,6 @@ public class TripService {
     }
 
     private void emit(String type, Trip t) {
-        events.publish(new TripEvent(type, t.getId().toString(), t.getDriverId(), t.getStatus(), System.currentTimeMillis()));
+        events.publish(new TripEvent(type, t.getId().toString(), t.getDriverId(), t.getStatus(), System.currentTimeMillis(), t.getEtaSeconds()));
     }
 }

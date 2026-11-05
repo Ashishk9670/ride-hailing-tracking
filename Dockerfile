@@ -8,7 +8,7 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp -q -DskipTests package \
     && java -Djarmode=tools -jar target/*.jar extract --layers --launcher --destination /workspace/layers
 
 FROM eclipse-temurin:21-jre-alpine
-RUN addgroup -S app && adduser -S app -G app
+RUN apk upgrade --no-cache && addgroup -S app && adduser -S app -G app
 WORKDIR /app
 COPY --from=build --chown=app:app /workspace/layers/dependencies/ ./
 COPY --from=build --chown=app:app /workspace/layers/spring-boot-loader/ ./
