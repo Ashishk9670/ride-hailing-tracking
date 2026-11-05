@@ -1,0 +1,65 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/ashishk9670/ride-hailing-tracking
+  # defaults to the chart appVersion; pin a digest or immutable tag in real deployments
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Non-secret application settings, rendered into a ConfigMap and injected as env vars.
+config:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/rides
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  DEV_TOKEN_ENDPOINT_ENABLED: "false"
+  TRACING_SAMPLING_PROBABILITY: "0.0"
+
+# Secret holding SPRING_DATASOURCE_USERNAME, SPRING_DATASOURCE_PASSWORD, RIDEHAILING_JWT_SECRET.
+# Production: create it out of band (External Secrets, Sealed Secrets: see deploy/examples) and set existingSecret.
+secret:
+  existingSecret: ride-hailing-secrets
+  # Dev/test only: let the chart render a Secret from `values` (never commit real values).
+  create: false
+  values: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: rides.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+resources:
+  requests: { cpu: 250m, memory: 512Mi }
+  limits: { cpu: "1", memory: 1Gi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /actuator/prometheus
+  prometheus.io/port: "8080"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

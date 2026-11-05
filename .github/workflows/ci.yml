@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with: { distribution: temurin, java-version: '21', cache: maven }
       - name: Build and unit tests
         run: mvn -B -ntp test
@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with: { distribution: temurin, java-version: '21', cache: maven }
       - name: Unit + integration tests (Testcontainers) with Jacoco
         run: mvn -B -ntp verify
@@ -40,7 +40,7 @@ jobs:
     needs: [unit]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with: { distribution: temurin, java-version: '21', cache: maven }
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
@@ -97,3 +97,51 @@ jobs:
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
       - name: Validate manifests against Kubernetes schemas
         run: ./kubeconform -strict -summary -kubernetes-version 1.30.0 deploy/k8s
+
+  monitoring-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Prometheus config and alert rules
+        run: |
+          docker run --rm --entrypoint promtool -v "$PWD/monitoring:/m:ro" prom/prometheus:v2.55.1 check rules /m/alerts/slo.rules.yml
+          docker run --rm --entrypoint promtool -v "$PWD/monitoring:/m:ro" prom/prometheus:v2.55.1 test rules /m/alerts/slo.rules.test.yml
+      - name: Verify Loki config
+        run: docker run --rm -v "$PWD/monitoring/loki.yml:/c.yml:ro" grafana/loki:3.2.1 -config.file=/c.yml -verify-config
+
+  helm-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with: { version: v3.16.4 }
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+      - name: helm lint
+        run: |
+          helm lint deploy/helm/ride-hailing-tracking
+          helm lint deploy/helm/ride-hailing-tracking -f deploy/helm/ride-hailing-tracking/ci/full-values.yaml
+      - name: helm template | kubeconform
+        run: |
+          for v in "" "-f deploy/helm/ride-hailing-tracking/ci/full-values.yaml"; do
+            helm template rides deploy/helm/ride-hailing-tracking $v \
+              | ./kubeconform -strict -summary -kubernetes-version 1.30.0
+          done
+      - name: Validate examples (External Secrets, Sealed Secrets, Argo CD) against the CRD catalog
+        run: |
+          ./kubeconform -strict -summary -kubernetes-version 1.30.0 \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            deploy/examples deploy/argocd
+
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v6
+        with: { distribution: temurin, java-version: '21', cache: maven }
+      - name: Generate CycloneDX SBOM
+        run: mvn -B -ntp -DskipTests org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeAggregateBom -DoutputFormat=json -DoutputName=sbom.cdx
+      - uses: actions/upload-artifact@v4
+        with: { name: sbom-cyclonedx, path: target/sbom.cdx.json }

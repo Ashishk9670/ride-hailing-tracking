@@ -56,6 +56,7 @@ public class LocationIngestService {
             throw new InvalidLocationException("Invalid location update: " + update);
         }
         metrics.locationProcessed();
+        metrics.locationLag(update.timestamp());
         speeds.record(update.lat(), update.lon(), update.speedKmh());
         Optional<String> tripId = registry.activeTrip(update.driverId());
         if (tripId.isEmpty()) {

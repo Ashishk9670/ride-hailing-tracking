@@ -23,7 +23,9 @@
   </properties>
   <dependencyManagement>
     <dependencies>
-      <dependency><groupId>at.yawk.lz4</groupId><artifactId>lz4-java</artifactId><version>1.11.4</version></dependency>
+      <dependency><groupId>at.yawk.lz4</groupId><artifactId>lz4-java</artifactId><version>1.12.0</version></dependency>
+      <!-- transitive via spring-kafka/kafka-clients: 1.1.10.5 has two HIGH CVEs (buffer overflow, DoS) -->
+      <dependency><groupId>org.xerial.snappy</groupId><artifactId>snappy-java</artifactId><version>1.1.10.9</version></dependency>
     </dependencies>
   </dependencyManagement>
   <dependencies>
@@ -49,8 +51,10 @@
     <dependency><groupId>org.testcontainers</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>postgresql</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>kafka</artifactId><scope>test</scope></dependency>
-    <dependency><groupId>net.jqwik</groupId><artifactId>jqwik</artifactId><version>1.9.3</version><scope>test</scope></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>toxiproxy</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>net.jqwik</groupId><artifactId>jqwik</artifactId><version>1.10.2</version><scope>test</scope></dependency>
     <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><version>1.4.1</version><scope>test</scope></dependency>
+    <dependency><groupId>com.networknt</groupId><artifactId>json-schema-validator</artifactId><version>1.5.6</version><scope>test</scope></dependency>
     <dependency><groupId>org.awaitility</groupId><artifactId>awaitility</artifactId><scope>test</scope></dependency>
     <dependency><groupId>io.projectreactor.netty</groupId><artifactId>reactor-netty-http</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webflux</artifactId><scope>test</scope></dependency>
@@ -88,7 +92,7 @@
         </executions>
       </plugin>
       <plugin>
-        <groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId><version>2.43.0</version>
+        <groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId><version>3.10.4</version>
         <configuration>
           <java>
             <trimTrailingWhitespace/>
@@ -101,4 +105,51 @@
       </plugin>
     </plugins>
   </build>
+  <profiles>
+    <!-- Mutation testing (optional): mvn -Pmutation test-compile org.pitest:pitest-maven:mutationCoverage -->
+    <profile>
+      <id>mutation</id>
+      <properties>
+        <pit.threshold>0</pit.threshold>
+        <!-- keep the JaCoCo agent out of the PIT minions -->
+        <jacoco.skip>true</jacoco.skip>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <!-- PIT reads surefire's argLine; drop the unresolved @{argLine} placeholder -->
+            <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+            <configuration><argLine>-Dnet.bytebuddy.experimental=true</argLine></configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.pitest</groupId><artifactId>pitest-maven</artifactId><version>1.17.4</version>
+            <dependencies>
+              <dependency><groupId>org.pitest</groupId><artifactId>pitest-junit5-plugin</artifactId><version>1.2.1</version></dependency>
+              <!-- must match the junit-platform-engine version managed by the Boot BOM -->
+              <dependency><groupId>org.junit.platform</groupId><artifactId>junit-platform-launcher</artifactId><version>1.12.2</version></dependency>
+            </dependencies>
+            <configuration>
+              <targetClasses>
+                <param>com.example.ridehailing.service.GeoUtils</param>
+                <param>com.example.ridehailing.service.SurgePricing</param>
+                <param>com.example.ridehailing.service.EtaModel</param>
+                <param>com.example.ridehailing.domain.TripStatus</param>
+              </targetClasses>
+              <targetTests>
+                <param>com.example.ridehailing.service.GeoUtilsTest</param>
+                <param>com.example.ridehailing.service.SurgePricingTest</param>
+                <param>com.example.ridehailing.service.EtaModelTest</param>
+                <param>com.example.ridehailing.domain.TripStatusTest</param>
+                <param>com.example.ridehailing.property.*</param>
+              </targetTests>
+              <outputFormats><param>HTML</param><param>XML</param></outputFormats>
+              <timestampedReports>false</timestampedReports>
+              <mutationThreshold>${pit.threshold}</mutationThreshold>
+              <jvmArgs><jvmArg>-Dnet.bytebuddy.experimental=true</jvmArg></jvmArgs>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

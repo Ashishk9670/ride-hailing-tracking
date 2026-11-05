@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Ashishk9670/ride-hailing-tracking/docs/schemas/driver-location.schema.json",
+  "title": "DriverLocationEvent",
+  "description": "Value of messages on the driver-locations Kafka topic (key = driverId).",
+  "type": "object",
+  "required": ["driverId", "lat", "lon", "heading", "speedKmh", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "driverId": { "type": "string", "minLength": 1 },
+    "tripId": { "type": ["string", "null"] },
+    "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+    "lon": { "type": "number", "minimum": -180, "maximum": 180 },
+    "heading": { "type": "number" },
+    "speedKmh": { "type": "number", "minimum": 0 },
+    "timestamp": { "type": "integer", "description": "epoch millis" }
+  }
+}

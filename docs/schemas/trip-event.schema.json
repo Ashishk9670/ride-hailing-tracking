@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Ashishk9670/ride-hailing-tracking/docs/schemas/trip-event.schema.json",
+  "title": "TripEvent",
+  "description": "Trip lifecycle event broadcast over WebSocket/GraphQL and Redis dispatch pub/sub.",
+  "type": "object",
+  "required": ["type", "tripId", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "type": { "type": "string", "minLength": 1 },
+    "tripId": { "type": "string", "minLength": 1 },
+    "driverId": { "type": ["string", "null"] },
+    "status": {
+      "type": ["string", "null"],
+      "enum": ["REQUESTED", "DRIVER_ASSIGNED", "DRIVER_ARRIVED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_DRIVER_AVAILABLE", null]
+    },
+    "timestamp": { "type": "integer", "description": "epoch millis" },
+    "etaSeconds": { "type": ["integer", "null"], "minimum": 0 }
+  }
+}
