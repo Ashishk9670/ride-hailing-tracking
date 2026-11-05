@@ -41,6 +41,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/rides
       SPRING_DATA_REDIS_HOST: redis
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      # with `--profile monitoring`, run `TRACING_SAMPLING_PROBABILITY=1.0 docker compose --profile app --profile monitoring up -d` to send traces to Tempo
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0.0}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://tempo:4318/v1/traces
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_started }
@@ -51,7 +54,9 @@ services:
     profiles: ["monitoring"]
     image: prom/prometheus:v2.55.1
     ports: ["9090:9090"]
-    volumes: ["./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts:/etc/prometheus/alerts:ro
     extra_hosts: ["host.docker.internal:host-gateway"]
   grafana:
     profiles: ["monitoring"]
@@ -63,6 +68,26 @@ services:
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    depends_on: [prometheus]
+    depends_on: [prometheus, loki, tempo]
+  loki:
+    profiles: ["monitoring"]
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/loki.yml"]
+    ports: ["3100:3100"]
+    volumes: ["./monitoring/loki.yml:/etc/loki/loki.yml:ro"]
+  tempo:
+    profiles: ["monitoring"]
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    ports: ["3200:3200", "4318:4318"]
+    volumes: ["./monitoring/tempo.yml:/etc/tempo/tempo.yml:ro"]
+  alloy:
+    profiles: ["monitoring"]
+    image: grafana/alloy:v1.4.2
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./monitoring/alloy.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
 volumes:
   pgdata:

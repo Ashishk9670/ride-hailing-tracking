@@ -17,6 +17,9 @@ public class Trip {
     private double dropoffLon;
     @Enumerated(EnumType.STRING)
     private TripStatus status;
+    private double surgeMultiplier = 1.0;
+    private double fareEstimate;
+    private Integer etaSeconds;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -42,6 +45,13 @@ public class Trip {
         this.updatedAt = Instant.now();
     }
 
+    public void applyPricing(double surgeMultiplier, double fareEstimate) {
+        this.surgeMultiplier = surgeMultiplier;
+        this.fareEstimate = fareEstimate;
+    }
+
+    public void applyEta(Integer etaSeconds) { this.etaSeconds = etaSeconds; }
+
     public void assignDriver(String driverId) {
         this.driverId = driverId;
         transitionTo(TripStatus.DRIVER_ASSIGNED);
@@ -54,6 +64,9 @@ public class Trip {
     public double getPickupLon() { return pickupLon; }
     public double getDropoffLat() { return dropoffLat; }
     public double getDropoffLon() { return dropoffLon; }
+    public Integer getEtaSeconds() { return etaSeconds; }
+    public double getSurgeMultiplier() { return surgeMultiplier; }
+    public double getFareEstimate() { return fareEstimate; }
     public TripStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
