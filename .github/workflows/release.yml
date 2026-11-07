@@ -49,12 +49,16 @@ jobs:
         env:
           IMAGE: ghcr.io/${{ github.repository }}
           DIGEST: ${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+        run: |
+          IMAGE="${IMAGE,,}"   # OCI image references must be lowercase; github.repository keeps the owner's capitalisation (Ashishk9670)
+          cosign sign --yes "${IMAGE}@${DIGEST}"
       - name: Attest SBOM (cosign keyless, CycloneDX)
         env:
           IMAGE: ghcr.io/${{ github.repository }}
           DIGEST: ${{ steps.build.outputs.digest }}
-        run: cosign attest --yes --type cyclonedx --predicate target/sbom.cdx.json "${IMAGE}@${DIGEST}"
+        run: |
+          IMAGE="${IMAGE,,}"   # OCI image references must be lowercase; github.repository keeps the owner's capitalisation (Ashishk9670)
+          cosign attest --yes --type cyclonedx --predicate target/sbom.cdx.json "${IMAGE}@${DIGEST}"
       - uses: actions/upload-artifact@v4
         with: { name: sbom-cyclonedx, path: target/sbom.cdx.json }
       # Verify (consumers):
