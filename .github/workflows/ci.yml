@@ -14,7 +14,7 @@ jobs:
         with: { distribution: temurin, java-version: '21', cache: maven }
       - name: Build and unit tests
         run: mvn -B -ntp test
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: unit-reports, path: target/surefire-reports }
 
@@ -26,7 +26,7 @@ jobs:
         with: { distribution: temurin, java-version: '21', cache: maven }
       - name: Unit + integration tests (Testcontainers) with Jacoco
         run: mvn -B -ntp verify
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-and-reports
@@ -60,7 +60,7 @@ jobs:
       - name: Run Playwright tests
         working-directory: e2e
         run: npx playwright test
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: playwright-report
@@ -143,5 +143,5 @@ jobs:
         with: { distribution: temurin, java-version: '21', cache: maven }
       - name: Generate CycloneDX SBOM
         run: mvn -B -ntp -DskipTests org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeAggregateBom -DoutputFormat=json -DoutputName=sbom.cdx
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: sbom-cyclonedx, path: target/sbom.cdx.json }
