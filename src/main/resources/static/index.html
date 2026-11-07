@@ -4,64 +4,189 @@
 <meta charset="utf-8">
 <title>Live Trip Tracking</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2310b981'/%3E%3Cpath d='M16 6c-4 0-7 3-7 7 0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z' fill='white'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-  body { margin: 0; font-family: system-ui, sans-serif; display: flex; height: 100vh; }
-  #panel { width: 300px; padding: 12px; box-sizing: border-box; overflow-y: auto; border-right: 1px solid #ccc; }
-  #map { flex: 1; }
-  button { margin: 2px 0; width: 100%; padding: 6px; }
-  #log { font: 11px monospace; max-height: 200px; overflow-y: auto; background: #f6f6f6; padding: 4px; }
-  dt { font-weight: bold; } dd { margin: 0 0 6px; }
+  :root {
+    --panel: rgba(255,255,255,.92); --surface: #f6f8f7; --border: #e1e7e4; --text: #0f1f1a; --muted: #5d6f68;
+    --brand: #059669; --brand-strong: #047857; --brand-soft: #d1fae5; --blue: #2563eb; --amber: #b45309; --red: #b91c1c;
+    --shadow: 0 10px 40px rgba(2, 20, 14, .22); --radius: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --panel: rgba(15,24,21,.9); --surface: #16231f; --border: #25362f; --text: #e6f2ed; --muted: #8fa89e;
+      --brand: #10b981; --brand-strong: #34d399; --brand-soft: #0d3b2d; --blue: #60a5fa; --amber: #fbbf24; --red: #f87171;
+      --shadow: 0 10px 40px rgba(0, 0, 0, .55);
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif; color: var(--text); overflow: hidden; -webkit-font-smoothing: antialiased; }
+  #map { position: absolute; inset: 0; z-index: 0; }
+  :focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 55%, transparent); outline-offset: 2px; border-radius: 8px; }
+
+  #panel { position: absolute; z-index: 1000; top: 16px; left: 16px; bottom: 16px; width: 372px; display: flex; flex-direction: column; gap: 12px;
+           overflow-y: auto; padding: 14px; background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--border);
+           border-radius: 20px; box-shadow: var(--shadow); }
+  .head { display: flex; align-items: center; gap: 10px; }
+  .head svg { width: 34px; height: 34px; flex: none; }
+  .head h1 { margin: 0; font-size: 17px; letter-spacing: -.01em; line-height: 1.2; }
+  .head small { display: block; color: var(--muted); font-size: 12px; font-weight: 500; }
+  #conn-wrap { margin-left: auto; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
+           background: var(--surface); color: var(--muted); border: 1px solid var(--border); text-transform: capitalize; }
+  .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .badge.connected { color: var(--brand); } .badge.closed { color: var(--red); }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px; display: grid; gap: 10px; }
+  .card > h2 { margin: 0; font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 700; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; min-width: 0; }
+  button { font: inherit; font-weight: 650; font-size: 13.5px; cursor: pointer; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border);
+           background: var(--panel); color: var(--text); transition: background .15s, transform .05s, border-color .15s; }
+  button:hover { border-color: var(--brand); }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  button.primary:hover { background: var(--brand-strong); }
+  button.wide { width: 100%; }
+  button[disabled] { opacity: .55; cursor: progress; }
+  select, input { font: inherit; width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+  label.lbl { font-size: 12px; color: var(--muted); font-weight: 600; display: grid; gap: 4px; }
+  #auth-state { font-size: 12.5px; color: var(--muted); }
+  #auth-state.on { color: var(--brand); font-weight: 600; }
+
+  .status-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #trip-status { display: inline-block; padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 800; letter-spacing: .04em; background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+  #trip-status.s-DRIVER_ASSIGNED, #trip-status.s-DRIVER_ARRIVED { background: color-mix(in srgb, var(--blue) 16%, transparent); color: var(--blue); border-color: transparent; }
+  #trip-status.s-IN_PROGRESS { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); border-color: transparent; }
+  #trip-status.s-COMPLETED { background: var(--brand-soft); color: var(--brand); border-color: transparent; }
+  #trip-status.s-NO_DRIVER_AVAILABLE, #trip-status.s-CANCELLED { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); border-color: transparent; }
+
+  .stepper { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 2px 0; }
+  .step { text-align: center; font-size: 10.5px; color: var(--muted); font-weight: 650; position: relative; padding-top: 16px; }
+  .step::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 6px; border-radius: 999px; background: var(--border); transition: background .3s; }
+  .step.done::before { background: var(--brand); } .step.done { color: var(--text); }
+  .step.now::before { background: linear-gradient(90deg, var(--brand), var(--brand-soft)); }
+
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+  .tile .k { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+  .tile .v { font-size: 17px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  dl.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+  dl.facts dt { color: var(--muted); } dl.facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; word-break: break-all; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .seg button { font-size: 12.5px; padding: 8px 4px; }
+
+  details.logbox { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 8px 12px; }
+  details.logbox summary { cursor: pointer; font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 700; }
+  #log { font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 150px; overflow-y: auto; margin-top: 8px; color: var(--muted); }
+
+  .driver-pin { width: 38px; height: 38px; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; border: 3px solid #fff; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+  .driver-pin svg { width: 20px; height: 20px; }
+
+  @media (max-width: 760px) {
+    #panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 56vh; border-radius: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
-<div id="panel">
-  <h3>Live Trip Tracking</h3>
-  <fieldset id="auth" style="margin:0 0 8px">
-    <legend>Sign in</legend>
-    <select id="login-role" style="width:100%">
+<div id="map"></div>
+
+<aside id="panel" aria-label="Trip controls">
+  <div class="head">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#10b981"/><path d="M16 6c-4 0-7 3-7 7 0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z" fill="#fff"/></svg>
+    <h1>Live Trip Tracking<small>Real-time dispatch and driver location</small></h1>
+    <div id="conn-wrap"><span class="badge" id="conn-badge"><span id="conn">idle</span></span></div>
+  </div>
+
+  <section class="card" id="auth">
+    <h2>Account</h2>
+    <select id="login-role" aria-label="Sign in as">
       <option value="operator">operator (RIDER + ADMIN)</option>
       <option value="rider">rider (RIDER)</option>
     </select>
-    <button id="btn-login">Sign in</button>
+    <button id="btn-login" class="wide">Sign in</button>
     <div id="auth-state">signed out</div>
-  </fieldset>
-  <button id="btn-sim">Start simulator (10 drivers)</button>
-  <button id="btn-request">Request ride (pickup = map center)</button>
-  <label>Trip ID <input id="trip-id" style="width:100%" placeholder="trip id"></label>
-  <button id="btn-track">Track trip</button>
-  <button id="btn-arrived">Driver arrived</button>
-  <button id="btn-start">Start trip</button>
-  <button id="btn-complete">Complete trip</button>
-  <fieldset id="replay" style="margin:6px 0">
-    <legend>Replay stored route</legend>
-    <select id="replay-speed" style="width:100%">
-      <option value="1">1x</option><option value="2">2x</option><option value="5">5x</option>
-      <option value="10">10x</option><option value="50">50x</option>
-    </select>
-    <button id="btn-replay">Replay trip</button>
-    <button id="btn-replay-stop">Stop replay</button>
-    <div>State: <span id="replay-state">idle</span>, points: <span id="replay-count">0</span></div>
-  </fieldset>
-  <dl>
-    <dt>Connection</dt><dd id="conn">idle</dd>
-    <dt>Trip status</dt><dd id="trip-status">-</dd>
-    <dt>Driver</dt><dd id="driver-id">-</dd>
-    <dt>Position</dt><dd id="position">-</dd>
-    <dt>Updates received</dt><dd id="update-count">0</dd>
-  </dl>
-  <div id="log"></div>
-</div>
-<div id="map"></div>
+  </section>
+
+  <section class="card">
+    <h2>Dispatch</h2>
+    <div class="row">
+      <button id="btn-sim">Start simulator (10 drivers)</button>
+    </div>
+    <button id="btn-request" class="primary wide">Request ride (pickup = map center)</button>
+  </section>
+
+  <section class="card">
+    <h2>Trip</h2>
+    <div class="status-line"><span class="lbl" style="color:var(--muted);font-size:12px;font-weight:600">Status</span><span id="trip-status">-</span></div>
+    <div class="stepper" aria-hidden="true">
+      <div class="step" data-s="DRIVER_ASSIGNED">Assigned</div><div class="step" data-s="DRIVER_ARRIVED">Arrived</div>
+      <div class="step" data-s="IN_PROGRESS">On trip</div><div class="step" data-s="COMPLETED">Done</div>
+    </div>
+    <div class="tiles">
+      <div class="tile"><div class="k">Fare</div><div class="v" id="fare">-</div></div>
+      <div class="tile"><div class="k">Surge</div><div class="v" id="surge">-</div></div>
+      <div class="tile"><div class="k">ETA</div><div class="v" id="eta">-</div></div>
+    </div>
+    <label class="lbl">Trip ID <input id="trip-id" placeholder="trip id" autocomplete="off"></label>
+    <button id="btn-track" class="wide">Track trip</button>
+    <div class="seg">
+      <button id="btn-arrived">Driver arrived</button><button id="btn-start">Start trip</button><button id="btn-complete">Complete trip</button>
+    </div>
+    <dl class="facts">
+      <dt>Driver</dt><dd id="driver-id">-</dd>
+      <dt>Position</dt><dd id="position">-</dd>
+      <dt>Updates received</dt><dd id="update-count">0</dd>
+    </dl>
+  </section>
+
+  <section class="card" id="replay">
+    <h2>Replay stored route</h2>
+    <div class="row">
+      <select id="replay-speed" aria-label="Replay speed">
+        <option value="1">1x</option><option value="2">2x</option><option value="5">5x</option>
+        <option value="10">10x</option><option value="50">50x</option>
+      </select>
+      <button id="btn-replay">Replay trip</button>
+      <button id="btn-replay-stop">Stop replay</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--muted)">State: <span id="replay-state">idle</span>, points: <span id="replay-count">0</span></div>
+  </section>
+
+  <details class="logbox" open><summary>Activity</summary><div id="log"></div></details>
+</aside>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const CENTER = [37.7749, -122.4194];
-const map = L.map('map').setView(CENTER, 14);
+const map = L.map('map', {zoomControl: false}).setView(CENTER, 14);
+L.control.zoom({position: 'bottomright'}).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '&copy; OpenStreetMap'}).addTo(map);
 let marker = null, ws = null, count = 0, pickupMarker = null, token = null;
 const USER = 'ui-rider';
 const $ = id => document.getElementById(id);
-const log = m => { const d = document.createElement('div'); d.textContent = m; $('log').prepend(d); };
+const log = m => { const d = document.createElement('div'); d.textContent = new Date().toLocaleTimeString() + '  ' + m; $('log').prepend(d); };
+const carIcon = L.divIcon({className: '', iconSize: [38, 38], iconAnchor: [19, 19],
+  html: '<div class="driver-pin"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11a2 2 0 011.5 2v4h-2v1.5a1 1 0 01-1 1h-1a1 1 0 01-1-1V17H8.5v1.5a1 1 0 01-1 1h-1a1 1 0 01-1-1V17h-2v-4A2 2 0 015 11zm2.2-.5h9.6l-1-3H8.2l-1 3zM7 14.5a1.2 1.2 0 100 2.4 1.2 1.2 0 000-2.4zm10 0a1.2 1.2 0 100 2.4 1.2 1.2 0 000-2.4z"/></svg></div>'});
+
+// ---- presentation helpers (never change the text the tests assert on) ----
+const STEPS = ['DRIVER_ASSIGNED', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'COMPLETED'];
+function paintStatus(s) {
+  const el = $('trip-status'); el.className = 's-' + s;
+  const idx = STEPS.indexOf(s);
+  document.querySelectorAll('.step').forEach((st, i) => { st.classList.toggle('done', idx >= 0 && i < idx || s === 'COMPLETED'); st.classList.toggle('now', i === idx && s !== 'COMPLETED'); });
+}
+function paintConn() { $('conn-badge').className = 'badge ' + $('conn').textContent; }
+const fmtEta = s => s == null ? '-' : (s < 90 ? s + ' s' : Math.round(s / 60) + ' min');
+function paintTrip(t) {
+  if (t.fareEstimate != null) $('fare').textContent = '$' + Number(t.fareEstimate).toFixed(2);
+  if (t.surgeMultiplier != null) $('surge').textContent = Number(t.surgeMultiplier).toFixed(1) + 'x';
+  if (t.etaSeconds != null) $('eta').textContent = fmtEta(t.etaSeconds);
+}
 
 async function api(method, path, body) {
   const headers = {'Content-Type': 'application/json'};
@@ -71,25 +196,26 @@ async function api(method, path, body) {
   const t = await r.text(); return t ? JSON.parse(t) : {};
 }
 
-function setStatus(t) { $('trip-status').textContent = t.status; if (t.driverId) $('driver-id').textContent = t.driverId; }
+function setStatus(t) { $('trip-status').textContent = t.status; paintStatus(t.status); paintTrip(t); if (t.driverId) $('driver-id').textContent = t.driverId; }
 
 function track(id) {
   if (ws) ws.close();
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(proto + '://' + location.host + '/ws/trips/' + id + '?access_token=' + encodeURIComponent(token || ''));
-  ws.onopen = () => { $('conn').textContent = 'connected'; };
-  ws.onclose = () => { $('conn').textContent = 'closed'; };
+  ws.onopen = () => { $('conn').textContent = 'connected'; paintConn(); };
+  ws.onclose = () => { $('conn').textContent = 'closed'; paintConn(); };
   ws.onmessage = ev => {
     const f = JSON.parse(ev.data);
     if (f.kind === 'location') {
       const p = f.data; const ll = [p.lat, p.lon];
-      if (!marker) marker = L.marker(ll).addTo(map); else marker.setLatLng(ll);
+      if (!marker) marker = L.marker(ll, {icon: carIcon}).addTo(map); else marker.setLatLng(ll);
       map.panTo(ll);
       $('position').textContent = p.lat.toFixed(5) + ', ' + p.lon.toFixed(5);
       $('driver-id').textContent = p.driverId;
       $('update-count').textContent = ++count;
     } else if (f.kind === 'event') {
-      if (f.data.status) $('trip-status').textContent = f.data.status;
+      if (f.data.status) { $('trip-status').textContent = f.data.status; paintStatus(f.data.status); }
+      if (f.data.etaSeconds != null) $('eta').textContent = fmtEta(f.data.etaSeconds);
       log('event ' + f.data.type);
     }
   };
@@ -98,9 +224,10 @@ function track(id) {
 $('btn-login').onclick = async () => {
   const roles = $('login-role').value === 'operator' ? ['RIDER', 'ADMIN'] : ['RIDER'];
   const r = await api('POST', '/api/auth/token', {subject: USER, roles});
-  if (!r) { $('auth-state').textContent = 'sign-in failed'; return; }
+  if (!r) { $('auth-state').textContent = 'sign-in failed'; $('auth-state').classList.remove('on'); return; }
   token = r.accessToken;
   $('auth-state').textContent = 'signed in as ' + USER + ' [' + roles.join(',') + ']';
+  $('auth-state').classList.add('on');
 };
 $('btn-sim').onclick = async () => { const r = await api('POST', '/api/simulator/start?count=10&lat=' + CENTER[0] + '&lon=' + CENTER[1] + '&intervalMs=500'); log('simulator ' + JSON.stringify(r)); };
 $('btn-request').onclick = async () => {
@@ -109,7 +236,7 @@ $('btn-request').onclick = async () => {
   if (!t) return;
   $('trip-id').value = t.id; setStatus(t);
   if (pickupMarker) pickupMarker.remove();
-  pickupMarker = L.circleMarker([c.lat, c.lng], {radius: 8, color: 'green'}).addTo(map);
+  pickupMarker = L.circleMarker([c.lat, c.lng], {radius: 9, color: '#059669', fillColor: '#10b981', fillOpacity: .5, weight: 3}).addTo(map);
   track(t.id);
 };
 let replayAbort = null, replayMarker = null, replayTrail = null;
@@ -124,7 +251,7 @@ $('btn-replay').onclick = async () => {
   stopReplay();
   if (replayMarker) { replayMarker.remove(); replayMarker = null; }
   if (replayTrail) { replayTrail.remove(); }
-  replayTrail = L.polyline([], {color: 'orange', className: 'replay-trail'}).addTo(map);
+  replayTrail = L.polyline([], {color: '#f59e0b', weight: 5, opacity: .85, className: 'replay-trail'}).addTo(map);
   $('replay-count').textContent = '0';
   $('replay-state').textContent = 'loading';
   const ctl = new AbortController(); replayAbort = ctl;
@@ -148,7 +275,7 @@ $('btn-replay').onclick = async () => {
         }
         if (name === 'point') {
           const p = JSON.parse(data), ll = [p.lat, p.lon];
-          if (!replayMarker) replayMarker = L.circleMarker(ll, {radius: 9, color: 'orange', className: 'replay-marker'}).addTo(map);
+          if (!replayMarker) replayMarker = L.circleMarker(ll, {radius: 10, color: '#fff', weight: 3, fillColor: '#f59e0b', fillOpacity: 1, className: 'replay-marker'}).addTo(map);
           else replayMarker.setLatLng(ll);
           replayTrail.addLatLng(ll); map.panTo(ll);
           $('replay-count').textContent = ++n;
